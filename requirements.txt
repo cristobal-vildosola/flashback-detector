@@ -1,0 +1,4 @@
+nearpy
+numpy
+opencv-python
+pyflann

@@ -1,0 +1,176 @@
+import os
+import re
+import time
+from typing import Tuple
+
+import cv2
+import numpy
+
+from caracteristicas.ColorLayout import color_layout_descriptor
+
+
+def extraer_caracteristicas_video(archivo: str, carpeta_log: str, fps_extraccion: int = 6,
+                                  tamano: Tuple[int, int] = (8, 8), force=False):
+    """
+    Extrae la caracteristicas de un video y las guarda en un archivo con el mismo nombre del video,
+    dentro de la carpeta log. Mide el tiempo que tomó la extracción y la imprime.
+
+    :param archivo: archivo del video.
+    :param carpeta_log: carpeta donde guardar las características.
+    :param fps_extraccion: número de frames por segundo a extraer.
+    :param tamano: el tamaño del mapa al cual reducir la dimension de la imagen.
+    :param force: si es que es Falso, no se reclaculan características.
+    """
+    # medir tiempo
+    t0 = time.time()
+
+    # abrir video
+    nombre = re.split('[/.]', archivo)[-2]
+    video = cv2.VideoCapture(archivo)
+
+    # crear carpeta de características si es que es necesario
+    if not os.path.isdir(carpeta_log):
+        os.mkdir(carpeta_log)
+
+    # chequear si es que ya se calcularon las características
+    if not force and os.path.isfile(f'{carpeta_log}/{nombre}.npy'):
+        return
+
+    frame_n = 0  # número de frames
+    fps = video.get(cv2.CAP_PROP_FPS)  # frames por segundo (para calcular tiempo)
+    salto_frames = round(fps / fps_extraccion)  # frames a saltar
+
+    print(f'extrayendo caracteristicas de video {nombre} ({fps:.2f} FPS)')
+    caracteristicas = []
+
+    while video.grab():
+
+        # obtener solo 1 de cada n frames
+        frame_n += 1
+        if frame_n % salto_frames != 0:
+            continue
+
+        # sacar frame y asegurarse de que no hay errores
+        retval, frame = video.retrieve()
+        if not retval:
+            continue
+
+        # extraer caracteristicas y guardar en el archivo
+        descriptor = color_layout_descriptor(frame, tamano)
+        descriptor = numpy.insert(descriptor, 0, frame_n / fps)
+        caracteristicas.append(descriptor.astype('f4'))
+
+    video.release()
+    numpy.save(f'{carpeta_log}/{nombre}.npy', numpy.array(caracteristicas))
+
+    tiempo = int(time.time() - t0)
+    print(f'la extracción de {int(frame_n / fps)} segundos de video tomo {tiempo} segundos')
+
+    log = open('log.txt', 'a')
+    log.write(f'{int(frame_n / fps)}\t{tiempo}\n')
+    log.close()
+    return
+
+
+def extraer_caracteristicas_videos(carpeta: str, fps_extraccion: int = 6, tamano: Tuple[int, int] = (8, 8), force=False):
+    """
+    Extrae las caracteristicas de todos los archivos dentro de la carpeta especificada
+    y los guarda en una nueva carpeta.
+
+    :param carpeta: la carpeta desde la cuál obtener todos los videos.
+    :param fps_extraccion: número de frames por segundo a extraer.
+    :param tamano: el tamaño del mapa al cual reducir la dimension de cada frame.
+    :param force: si es que es Falso, no se reclaculan características.
+    """
+
+    # obtener todos los archivos en la carpeta
+    videos = os.listdir(carpeta)
+
+    # extraer la caracteristicas de cada comercial
+    for video in videos:
+        if video.endswith('.mp4'):
+            extraer_caracteristicas_video(f'{carpeta}/{video}', f'{carpeta}_car_{tamano}_{fps_extraccion}',
+                                          fps_extraccion=fps_extraccion, tamano=tamano, force=force)
+
+    return
+
+
+def leer_caracteristicas(archivo: str) -> Tuple[numpy.ndarray, numpy.ndarray]:
+    """
+    Lee los datos de un archivo y las retorna en 2 arreglos de numpy, 1 para características y otro para etiquetas.
+
+    :param archivo: el archivo a leer.
+
+    :return: 2 arreglos de numpy, uno para etiquetas y otro para características, en ese orden.
+    """
+
+    datos = numpy.load(archivo)
+    caracteristicas = datos[:, 1:]
+
+    # generar etiquetas
+    nombre = re.split('[/.]', archivo)[-2]
+    etiqueta_list = []
+    for i in range(datos.shape[0]):
+        etiqueta_list.append(f'{nombre} # {datos[i][0]} # {i + 1}')
+
+    etiquetas = numpy.array(etiqueta_list)
+    return etiquetas, caracteristicas.astype('f4')
+
+
+def agrupar_caracteristicas(carpeta: str, tamano=(8, 8), recargar: bool = True) \
+        -> Tuple[numpy.ndarray, numpy.ndarray]:
+    """
+    Agrupa todos los datos de la carpeta dada en 2 arreglos de numpy, 1 para características y otro para etiquetas.
+    Finalmente los guarda en archivos para reutilizarlos si se vuelve a intentar agrupar la misma carpeta.
+
+    :param carpeta: carpeta donde están las características que agrupar.
+    :param recargar: determina si se deben recargar los archivos previamente generados (si es que existen).
+    :param tamano: tamaño del vector de características.
+
+    :return: 2 arreglos de numpy, uno para etiquetas y otro para características, en ese orden.
+    """
+    # reutilizar archivos si ya se hizo agrupación antes
+    if os.path.isfile(f'{carpeta}/caracteristicas.npy') and os.path.isfile(f'{carpeta}/etiquetas.npy') and recargar:
+        caracteristicas = numpy.load(f'{carpeta}/caracteristicas.npy')
+        etiquetas = numpy.load(f'{carpeta}/etiquetas.npy')
+
+        return etiquetas, caracteristicas
+
+    # obtener todos los archivos en la carpeta
+    archivos = os.listdir(carpeta)
+
+    etiquetas = numpy.empty(0, dtype=numpy.str)
+    caracteristicas = numpy.empty((0, tamano[0] * tamano[1] * 3), dtype='f4')
+
+    # leer las caracteristicas de todos los videos y agruparlas
+    i = 0
+    for archivo in archivos:
+        if not archivo.endswith('.npy') or archivo == 'caracteristicas.npy' or archivo == 'etiquetas.npy':
+            continue
+
+        # leer características y juntar con los arreglos.
+        etiquetas_video, caracteristicas_video = leer_caracteristicas(f'{carpeta}/{archivo}')
+        etiquetas = numpy.concatenate((etiquetas, etiquetas_video))
+        caracteristicas = numpy.concatenate((caracteristicas, caracteristicas_video))
+
+        i += 1
+        print(f'{caracteristicas.shape[0]:,d} lineas leídas en {i} archivos')
+
+    # guardar archivos
+    numpy.save(f'{carpeta}/caracteristicas.npy', caracteristicas)
+    numpy.save(f'{carpeta}/etiquetas.npy', etiquetas)
+
+    return etiquetas, caracteristicas
+
+
+def main():
+    tamano = (8, 8)
+    fps_extraccion = 6
+
+    extraer_caracteristicas_videos('../videos/Shippuden', fps_extraccion=fps_extraccion, tamano=tamano, force=True)
+    agrupar_caracteristicas(f'../videos/Shippuden_car_{tamano}_{fps_extraccion}')
+    return
+
+
+if __name__ == '__main__':
+    main()
