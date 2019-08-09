@@ -1,23 +1,25 @@
 import os
 import re
 import time
-from typing import Tuple
+from typing import Tuple, Callable, Dict, Any
 
 import cv2
 import numpy
 
 from caracteristicas.ColorLayout import color_layout_descriptor
+import caracteristicas.Keyframes as Keyframes
 
 
-def extraer_caracteristicas_video(archivo: str, carpeta_log: str, fps_extraccion: int = 6,
-                                  tamano: Tuple[int, int] = (8, 8), force=False):
+def extraer_caracteristicas_video(archivo: str, carpeta_log: str, keyframe_gen: Callable = Keyframes.n_frames_per_fps,
+                                  keyframe_args: Dict[str, Any] = {'n': 6}, tamano: Tuple[int, int] = (8, 8), force=False):
     """
     Extrae la caracteristicas de un video y las guarda en un archivo con el mismo nombre del video,
     dentro de la carpeta log. Mide el tiempo que tomó la extracción y la imprime.
 
     :param archivo: archivo del video.
     :param carpeta_log: carpeta donde guardar las características.
-    :param fps_extraccion: número de frames por segundo a extraer.
+    :param keyframe_gen: número de frames por segundo a extraer.
+    :param keyframe_args: número de frames por segundo a extraer.
     :param tamano: el tamaño del mapa al cual reducir la dimension de la imagen.
     :param force: si es que es Falso, no se reclaculan características.
     """
@@ -36,51 +38,42 @@ def extraer_caracteristicas_video(archivo: str, carpeta_log: str, fps_extraccion
     if not force and os.path.isfile(f'{carpeta_log}/{nombre}.npy'):
         return
 
-    frame_n = 0  # número de frames
-    fps = video.get(cv2.CAP_PROP_FPS)  # frames por segundo (para calcular tiempo)
-    salto_frames = round(fps / fps_extraccion)  # frames a saltar
-
-    print(f'extrayendo caracteristicas de video {nombre} ({fps:.2f} FPS)')
+    print(f'extracting features from video {nombre}')
     caracteristicas = []
 
-    while video.grab():
-
-        # obtener solo 1 de cada n frames
-        frame_n += 1
-        if frame_n % salto_frames != 0:
-            continue
-
-        # sacar frame y asegurarse de que no hay errores
-        retval, frame = video.retrieve()
-        if not retval:
-            continue
-
-        # extraer caracteristicas y guardar en el archivo
+    t = 0
+    # recorrer todos los keyframes
+    for t, frame in keyframe_gen(archivo, **keyframe_args):
+        # extraer caracteristicas y guardar en el arreglo
         descriptor = color_layout_descriptor(frame, tamano)
-        descriptor = numpy.insert(descriptor, 0, frame_n / fps)
+        descriptor = numpy.insert(descriptor, 0, t)
         caracteristicas.append(descriptor.astype('f4'))
 
     video.release()
     numpy.save(f'{carpeta_log}/{nombre}.npy', numpy.array(caracteristicas))
 
     tiempo = int(time.time() - t0)
-    print(f'la extracción de {int(frame_n / fps)} segundos de video tomo {tiempo} segundos')
+    print(f'la extracción de {int(t)} segundos de video tomo {tiempo} segundos')
 
     log = open('log.txt', 'a')
-    log.write(f'{int(frame_n / fps)}\t{tiempo}\n')
+    log.write(f'{int(t)}\t{tiempo}\n')
     log.close()
     return
 
 
-def extraer_caracteristicas_videos(carpeta: str, fps_extraccion: int = 6, tamano: Tuple[int, int] = (8, 8), force=False):
+def extraer_caracteristicas_videos(carpeta: str, keyframe_gen: Callable = Keyframes.n_frames_per_fps,
+                                   keyframe_args: Dict[str, Any] = {'n': 6}, tamano: Tuple[int, int] = (8, 8),
+                                   force=False, name: str = '6'):
     """
     Extrae las caracteristicas de todos los archivos dentro de la carpeta especificada
     y los guarda en una nueva carpeta.
 
     :param carpeta: la carpeta desde la cuál obtener todos los videos.
-    :param fps_extraccion: número de frames por segundo a extraer.
+    :param keyframe_gen: número de frames por segundo a extraer.
+    :param keyframe_args: número de frames por segundo a extraer.
     :param tamano: el tamaño del mapa al cual reducir la dimension de cada frame.
     :param force: si es que es Falso, no se reclaculan características.
+    :param name: .
     """
 
     # obtener todos los archivos en la carpeta
@@ -89,8 +82,9 @@ def extraer_caracteristicas_videos(carpeta: str, fps_extraccion: int = 6, tamano
     # extraer la caracteristicas de cada comercial
     for video in videos:
         if video.endswith('.mp4'):
-            extraer_caracteristicas_video(f'{carpeta}/{video}', f'{carpeta}_car_{tamano}_{fps_extraccion}',
-                                          fps_extraccion=fps_extraccion, tamano=tamano, force=force)
+            extraer_caracteristicas_video(f'{carpeta}/{video}', f'{carpeta}_car_{name}_{tamano}',
+                                          keyframe_gen=keyframe_gen, keyframe_args=keyframe_args, tamano=tamano,
+                                          force=force)
 
     return
 
@@ -165,10 +159,13 @@ def agrupar_caracteristicas(carpeta: str, tamano=(8, 8), recargar: bool = True) 
 
 def main():
     tamano = (8, 8)
-    fps_extraccion = 6
+    fun = Keyframes.n_frames_per_fps
+    args = {'n': 6}
+    name = 'flat_6'
 
-    extraer_caracteristicas_videos('../videos/Shippuden', fps_extraccion=fps_extraccion, tamano=tamano, force=True)
-    agrupar_caracteristicas(f'../videos/Shippuden_car_{tamano}_{fps_extraccion}')
+    extraer_caracteristicas_videos('../videos/Shippuden', keyframe_gen=fun, keyframe_args=args, tamano=tamano,
+                                   force=True, name=name)
+    # agrupar_caracteristicas(f'../videos/Shippuden_car_{tamano}_{fps_extraccion}')
     return
 
 
