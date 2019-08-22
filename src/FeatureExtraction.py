@@ -11,7 +11,8 @@ import caracteristicas.Keyframes as Keyframes
 
 
 def extraer_caracteristicas_video(archivo: str, carpeta_log: str, keyframe_gen: Callable = Keyframes.n_frames_per_fps,
-                                  keyframe_args: Dict[str, Any] = {'n': 6}, tamano: Tuple[int, int] = (8, 8), force=False):
+                                  keyframe_args: Dict[str, Any] = {'n': 6}, tamano: Tuple[int, int] = (8, 8),
+                                  force=False):
     """
     Extrae la caracteristicas de un video y las guarda en un archivo con el mismo nombre del video,
     dentro de la carpeta log. Mide el tiempo que tomó la extracción y la imprime.
@@ -23,8 +24,6 @@ def extraer_caracteristicas_video(archivo: str, carpeta_log: str, keyframe_gen: 
     :param tamano: el tamaño del mapa al cual reducir la dimension de la imagen.
     :param force: si es que es Falso, no se reclaculan características.
     """
-    # medir tiempo
-    t0 = time.time()
 
     # abrir video
     nombre = re.split('[/.]', archivo)[-2]
@@ -33,6 +32,9 @@ def extraer_caracteristicas_video(archivo: str, carpeta_log: str, keyframe_gen: 
     # crear carpeta de características si es que es necesario
     if not os.path.isdir(carpeta_log):
         os.mkdir(carpeta_log)
+
+    # medir tiempo
+    t0 = time.time()
 
     # chequear si es que ya se calcularon las características
     if not force and os.path.isfile(f'{carpeta_log}/{nombre}.npy'):
@@ -55,7 +57,7 @@ def extraer_caracteristicas_video(archivo: str, carpeta_log: str, keyframe_gen: 
     tiempo = int(time.time() - t0)
     print(f'la extracción de {int(t)} segundos de video tomo {tiempo} segundos')
 
-    log = open('log.txt', 'a')
+    log = open(f'log_{carpeta_log}.txt', 'a')
     log.write(f'{int(t)}\t{tiempo}\n')
     log.close()
     return
