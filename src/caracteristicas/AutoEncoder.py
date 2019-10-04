@@ -1,48 +1,57 @@
+import time
+from typing import Tuple, Iterable
+
 import cv2
 import numpy
-from keras.layers import Input, Conv2D, Conv2DTranspose, Dense, Flatten, MaxPooling2D, Reshape, UpSampling2D
-from keras.models import Model
+from keras.layers import Input, Conv2D, Flatten, MaxPooling2D, UpSampling2D
+from keras.models import Model, load_model
 
 import caracteristicas.Keyframes as Keyframes
 
 
-def model(input_shape=(256, 256, 3), descriptor_size=192, act='relu', kern=3, stri=2, pool_size=2, pad='same'):
-    input_img = Input(shape=input_shape)  # (256, 256, 3)
+def model(
+        input_shape: Tuple[int, int, int] = (256, 256, 3), cells: int = 3, convs: int = 2,
+        kernel_size: int = 3, filters: int = 16, activation: str = 'relu', pool_size: int = 2,
+):
+    conv_args = {
+        'filters': filters,
+        'kernel_size': kernel_size,
+        'activation': activation,
+        'padding': 'same',
+    }
+
+    input_img = Input(shape=input_shape)
 
     # convolutional encoding
-    conv1 = Conv2D(filters=4, kernel_size=kern, strides=stri, padding=pad, activation=act)(input_img)  # (128, 128, 4)
-    pool1 = MaxPooling2D(pool_size=pool_size, padding=pad)(conv1)  # (64, 64, 4)
+    pool = input_img
+    for _ in range(cells):
 
-    conv2 = Conv2D(filters=8, kernel_size=kern, strides=stri, padding=pad, activation=act)(pool1)  # (32, 32, 8)
-    pool2 = MaxPooling2D(pool_size=pool_size, padding=pad)(conv2)  # (16, 16, 8)
+        conv = Conv2D(**conv_args)(pool)
+        for _ in range(1, convs):
+            conv = Conv2D(**conv_args)(conv)
 
-    conv3 = Conv2D(filters=16, kernel_size=kern, strides=stri, padding=pad, activation=act)(pool2)  # (8, 8, 16)
-    pool3 = MaxPooling2D(pool_size=pool_size, padding=pad)(conv3)  # (4, 4, 16)
+        pool = MaxPooling2D(pool_size=pool_size, padding='same')(conv)
 
-    # flatten and dense
-    flattened = Flatten()(pool3)  # (256)
-    encoded = Dense(descriptor_size, activation=act)(flattened)  # (192)
-
-    # reverse dense and reshape
-    dense2 = Dense(numpy.prod(pool3._keras_shape[1:]), activation=act)(encoded)  # (256)
-    reshaped = Reshape(pool3._keras_shape[1:])(dense2)  # (4, 4, 16)
+    # flatten encoding
+    encoded = Flatten()(pool)
 
     # deconvolutional decoding
-    up1 = UpSampling2D(size=pool_size)(reshaped)  # (8, 8, 16)
-    deconv1 = Conv2DTranspose(filters=8, kernel_size=kern, strides=stri, padding=pad, activation=act)(up1)
-    # (16, 16, 8)
+    deconv = pool
+    for i in range(cells):
+        up = UpSampling2D(size=pool_size)(deconv)
 
-    up2 = UpSampling2D(size=pool_size)(deconv1)  # (32, 32, 8)
-    deconv2 = Conv2DTranspose(filters=4, kernel_size=kern, strides=stri, padding=pad, activation=act)(up2)
-    # (64, 64, 4)
+        deconv = Conv2D(**conv_args)(up)
+        for _ in range(1, convs):
+            deconv = Conv2D(**conv_args)(deconv)
 
-    up3 = UpSampling2D(size=pool_size)(deconv2)  # (128, 128, 4)
-    decoded = Conv2DTranspose(filters=3, kernel_size=kern, strides=stri, padding=pad)(up3)
-    # (256, 256, 3)
+    # return to original number of channels
+    conv_args['filters'] = input_shape[2]
+    recontruction = Conv2D(**conv_args)(deconv)
 
     # complete model
-    autoencoder = Model(input_img, decoded)
+    autoencoder = Model(inputs=input_img, outputs=recontruction)
     autoencoder.compile(optimizer='adadelta', loss='mean_absolute_error')
+    autoencoder.summary()
 
     # encoder
     encoder = Model(inputs=input_img, outputs=encoded)
@@ -50,54 +59,138 @@ def model(input_shape=(256, 256, 3), descriptor_size=192, act='relu', kern=3, st
     return autoencoder, encoder
 
 
-def main():
+class AutoEncoder:
+    def __init__(
+            self,
+            input_shape: Tuple[int, int, int] = (256, 256, 3), cells: int = 3, convs: int = 2,
+            kern_size: int = 3, filters: int = 16, act: str = 'relu', pool_size: int = 2,
+            autoencoder=None, encoder=None,
+    ):
+
+        if autoencoder is None and encoder is None:
+            autoencoder, encoder = model(
+                input_shape=input_shape, cells=cells, convs=convs,
+                kernel_size=kern_size, filters=filters, activation=act, pool_size=pool_size
+            )
+
+        self.autoencoder = autoencoder
+        self.encoder = encoder
+
+        self.input_shape = self.autoencoder.get_input_shape_at(0)
+        self.output_size = self.encoder.output_shape[1]
+
+    def train(self, data: numpy.ndarray, epochs: int, batch_size: int = 32, validation_split: float = 0.2,
+              verbose: int = 2):
+
+        t = time.time()
+
+        self.autoencoder.fit(
+            data, data,
+            validation_split=validation_split,
+            epochs=epochs,
+            batch_size=batch_size,
+            verbose=verbose)
+
+        if verbose > 0:
+            print(f'\nTraining took {time.time() - t:.2f} seconds')
+        return
+
+    def encode(self, data: numpy.ndarray):
+        return self.encoder.predict(data)
+
+    def save(self, name: str = 'model'):
+        self.autoencoder.save(f'{name}-autoencoder.h5')
+        self.encoder.save(f'{name}-encoder.h5')
+        return
+
+    def encode_decode(self, data: numpy.ndarray):
+        return self.autoencoder.predict(data)
+
+    def test(self, data: numpy.ndarray):
+        # obtain reconstructed images
+        predictions = self.encode_decode(data)
+
+        # convert to ints
+        predictions = (predictions * 255).astype('uint8')
+        original = (data * 255).astype('uint8')
+
+        # resize
+        def resize(img: numpy.ndarray):
+            return cv2.resize(img, dsize=(593, 336), interpolation=cv2.INTER_AREA)
+
+        resized_p = [resize(predictions[i]) for i in range(len(predictions))]
+        resized_o = [resize(original[i]) for i in range(len(predictions))]
+
+        i = 0
+        while True:
+            cv2.imshow(f'autoencoder reconstruction', cv2.vconcat([resized_o[i], resized_p[i]]))
+
+            key = cv2.waitKey(0)
+            if key & 0xff == ord('a'):
+                i = max(i - 1, 0)
+            elif key & 0xff == ord('d'):
+                i = min(i + 1, len(predictions) - 1)
+            elif key == 27 or key == -1:  # esc
+                break
+
+        return
+
+
+def load_autoencoder(name: str = 'model'):
+    autoencoder = load_model(f'{name}-autoencoder.h5')
+    encoder = load_model(f'{name}-encoder.h5')
+    return AutoEncoder(autoencoder=autoencoder, encoder=encoder)
+
+
+def load_frames(videos: Iterable[str] = ('003',), shape: Tuple[int, int, int] = (64, 64, 3), gray: bool = False):
     frames = []
-    for _, frame in Keyframes.n_frames_per_fps('../../videos/Shippuden/003.mp4', n=1):
-        frames.append(cv2.resize(frame, dsize=(256, 256), interpolation=cv2.INTER_AREA))
 
-    frames = numpy.array(frames)
+    for video in videos:
+        print(f'extracting frames from video {video}')
+        for _, frame in Keyframes.n_frames_per_fps(f'../../videos/Shippuden/{video}.mp4', n=1):
 
-    print(frames.shape)
+            if gray:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+            frames.append(
+                numpy.reshape(
+                    cv2.resize(frame, dsize=shape[:2], interpolation=cv2.INTER_AREA), shape))
+
+    return numpy.array(frames)
+
+
+def main():
+
+    # auto encoder config
+    shape = (64, 64, 3)
+    cells = 4
+    convs = 2
+
+    # train config
+    epochs = 50
+    batch_size = 32
+
+    # extract frames
+    videos = ['003', ]  # '098', '253', '345', ]
+    frames = load_frames(videos, shape)
+
+    # shuffle and normalize to [0, 1]
     frames = frames.astype('float32') / 255
-
-    numpy.random.seed(1209)
     numpy.random.shuffle(frames)
 
-    autoencoder, encoder = model()
-    autoencoder.fit(frames, frames,
-                    validation_split=0.2,
-                    epochs=50,
-                    batch_size=64,
-                    verbose=2)
+    # create model and train
+    autoencoder = AutoEncoder(input_shape=shape, cells=cells, convs=convs, act='tanh')
+    autoencoder.train(frames, epochs=epochs, batch_size=batch_size)
+    # autoencoder.save()
 
-    predictions = autoencoder.predict(frames[:5])
+    # load model
+    # autoencoder = load_autoencoder()
+    print(f'descriptor size: {autoencoder.output_size}')
 
-    original1 = cv2.resize((frames[0] * 255).astype('uint8'), dsize=(593, 336), interpolation=cv2.INTER_AREA)
-    reconstructed1 = cv2.resize((predictions[0] * 255).astype('uint8'), dsize=(593, 336), interpolation=cv2.INTER_AREA)
-
-    original2 = cv2.resize((frames[1] * 255).astype('uint8'), dsize=(593, 336), interpolation=cv2.INTER_AREA)
-    reconstructed2 = cv2.resize((predictions[1] * 255).astype('uint8'), dsize=(593, 336), interpolation=cv2.INTER_AREA)
-
-    cv2.imshow(f'reconstruction',
-               cv2.hconcat(
-                   [cv2.vconcat([original1, reconstructed1]),
-                    cv2.vconcat([original2, reconstructed2])]))
-
-    original1 = cv2.resize((frames[2] * 255).astype('uint8'), dsize=(593, 336), interpolation=cv2.INTER_AREA)
-    reconstructed1 = cv2.resize((predictions[2] * 255).astype('uint8'), dsize=(593, 336), interpolation=cv2.INTER_AREA)
-
-    original2 = cv2.resize((frames[3] * 255).astype('uint8'), dsize=(593, 336), interpolation=cv2.INTER_AREA)
-    reconstructed2 = cv2.resize((predictions[3] * 255).astype('uint8'), dsize=(593, 336), interpolation=cv2.INTER_AREA)
-
-    cv2.imshow(f'reconstruction2',
-               cv2.hconcat(
-                   [cv2.vconcat([original1, reconstructed1]),
-                    cv2.vconcat([original2, reconstructed2])]))
-
-    cv2.waitKey(0)
-
+    autoencoder.test(frames[:30])
     return
 
 
 if __name__ == '__main__':
+    numpy.random.seed(1209)
     main()
