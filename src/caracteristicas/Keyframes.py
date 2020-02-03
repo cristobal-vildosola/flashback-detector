@@ -98,7 +98,8 @@ def window_max_diff(file: str, frames_per_window: int = 2) -> KeyframeGeneratorT
         ret, frame = video.read()
         if not ret:
             run = False
-        frames.append(frame)
+        else:
+            frames.append(frame)
 
         processed += 1
         if processed % 1000 == 0:
@@ -198,15 +199,16 @@ def threshold_diff(file: str, threshold: float = 1.3) -> KeyframeGeneratorType:
 
 
 if __name__ == '__main__':
-    keyframes1 = [[i, frame] for i, frame in window_max_diff('../../videos/Shippuden/179.mp4')]
-    keyframes2 = [[i, frame] for i, frame in n_frames_per_fps('../../videos/Shippuden/179.mp4')]
+    cap = '003'
+    keyframes2 = [[i, frame] for i, frame in window_max_diff(f'../../videos/Shippuden/{cap}.mp4')]
+    keyframes1 = [[i, frame] for i, frame in n_frames_per_fps(f'../../videos/Shippuden/{cap}.mp4')]
 
     print(len(keyframes1), len(keyframes2))
 
     for i1 in range(len(keyframes1)):
         keyframes1[i1][1] = cv2.resize(keyframes1[i1][1], (593, 336))
-    for i2 in range(len(keyframes2)):
-        keyframes2[i2][1] = cv2.resize(keyframes2[i2][1], (593, 336))
+    for i1 in range(len(keyframes2)):
+        keyframes2[i1][1] = cv2.resize(keyframes2[i1][1], (593, 336))
 
     # show keyframes
     i1 = 0

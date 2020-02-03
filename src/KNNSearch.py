@@ -6,7 +6,7 @@ import numpy
 
 from busqueda.LSH import LSHIndex
 from busqueda.FlannIndex import Linear
-from FeatureExtraction import leer_caracteristicas, agrupar_caracteristicas
+from FeatureExtraction import read_features, group_features
 
 
 def frames_mas_cercanos_video(archivo: str, carpeta_log: str, indice: LSHIndex, k: int = 5):
@@ -21,7 +21,7 @@ def frames_mas_cercanos_video(archivo: str, carpeta_log: str, indice: LSHIndex, 
     """
 
     # leer caracteristicas del video
-    etiquetas_video, caracteristicas_video = leer_caracteristicas(archivo)
+    etiquetas_video, caracteristicas_video = read_features(archivo)
 
     print(f'Contando número de candidatos por frame')
 
@@ -71,8 +71,8 @@ def main(video: str):
     k = 50
 
     t0 = time.process_time()
-    etiquetas, caracteristicas = agrupar_caracteristicas(f'../videos/Shippuden_car_{tamano}_{fps}',
-                                                         tamano=tamano, recargar=True)
+    etiquetas, caracteristicas = group_features(f'../videos/Shippuden_car_{tamano}_{fps}',
+                                                tamano=tamano, recargar=True)
 
     # buscar inicio y fin de las caracteristicas del video a buscar
     inicio = fin = -1

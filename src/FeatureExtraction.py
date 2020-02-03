@@ -3,83 +3,82 @@ import re
 import time
 from typing import Tuple, Callable, Dict, Any
 
-import cv2
 import numpy
 
 from caracteristicas.ColorLayout import color_layout_descriptor
 import caracteristicas.Keyframes as Keyframes
+from caracteristicas.AutoEncoder import AutoEncoder, load_autoencoder, load_resize_frames
 
 
-def extraer_caracteristicas_video(archivo: str, carpeta_log: str, keyframe_gen: Callable = Keyframes.n_frames_per_fps,
-                                  keyframe_args: Dict[str, Any] = None, tamano: Tuple[int, int] = (8, 8),
-                                  force=False):
+def extract_features(
+        file: str, save_path: str, keyframe_gen: Callable = Keyframes.n_frames_per_fps,
+        keyframe_args: Dict[str, Any] = None, size: Tuple[int, int] = (8, 8),
+        force=False):
     """
     Extrae la caracteristicas de un video y las guarda en un archivo con el mismo nombre del video,
     dentro de la carpeta log. Mide el tiempo que tomó la extracción y la imprime.
 
-    :param archivo: archivo del video.
-    :param carpeta_log: carpeta donde guardar las características.
+    :param file: archivo del video.
+    :param save_path: carpeta donde guardar las características.
     :param keyframe_gen: número de frames por segundo a extraer.
     :param keyframe_args: número de frames por segundo a extraer.
-    :param tamano: el tamaño del mapa al cual reducir la dimension de la imagen.
+    :param size: el tamaño del mapa al cual reducir la dimension de la imagen.
     :param force: si es que es Falso, no se reclaculan características.
     """
     if keyframe_args is None:
         keyframe_args = {}
 
-    # abrir video
-    nombre = re.split('[/.]', archivo)[-2]
-    video = cv2.VideoCapture(archivo)
-
     # crear carpeta de características si es que es necesario
-    if not os.path.isdir(carpeta_log):
-        os.mkdir(carpeta_log)
+    if not os.path.isdir(save_path):
+        os.mkdir(save_path)
+
+    # chequear si es que ya se calcularon las características
+    video_name = re.split('[/.]', file)[-2]
+    if not force and os.path.isfile(f'{save_path}/{video_name}.npy'):
+        print(f'Skipping video {video_name}')
+        return
+
+    print(f'Extracting features from video {video_name}')
+    features = []
 
     # medir tiempo
     t0 = time.time()
 
-    # chequear si es que ya se calcularon las características
-    if not force and os.path.isfile(f'{carpeta_log}/{nombre}.npy'):
-        print(f'Skipping video {nombre}')
-        return
-
-    print(f'Extracting features from video {nombre}')
-    caracteristicas = []
-
     t = 0
     # recorrer todos los keyframes
-    for t, frame in keyframe_gen(archivo, **keyframe_args):
+    for t, frame in keyframe_gen(file, **keyframe_args):
         # extraer caracteristicas y guardar en el arreglo
-        descriptor = color_layout_descriptor(frame, tamano)
+        descriptor = color_layout_descriptor(frame, size)
         descriptor = numpy.insert(descriptor, 0, t)
-        caracteristicas.append(descriptor.astype('f4'))
+        features.append(descriptor.astype('f4'))
 
-    video.release()
-    numpy.save(f'{carpeta_log}/{nombre}.npy', numpy.array(caracteristicas))
+    numpy.save(f'{save_path}/{video_name}.npy', numpy.array(features))
 
-    tiempo = int(time.time() - t0)
-    print(f'  feature extraction for {int(t)} seconds took {tiempo} seconds')
+    duration = int(time.time() - t0)
+    print(f'feature extraction for {int(t)} seconds took {duration} seconds')
 
-    if os.path.exists(f'{carpeta_log}/log.txt'):
-        log = open(f'{carpeta_log}/log.txt', 'a')
+    if os.path.exists(f'{save_path}/log.txt'):
+        log = open(f'{save_path}/log.txt', 'a')
     else:
-        log = open(f'{carpeta_log}/log.txt', 'w')
-    log.write(f'{int(t)}\t{tiempo}\n')
+        log = open(f'{save_path}/log.txt', 'w')
+
+    log.write(f'{int(t)}\t{duration}\n')
     log.close()
     return
 
 
-def extraer_caracteristicas_videos(carpeta: str, keyframe_gen: Callable = Keyframes.n_frames_per_fps,
-                                   keyframe_args: Dict[str, Any] = None, tamano: Tuple[int, int] = (8, 8),
-                                   force=False, name: str = '6'):
+def extract_features_folder(
+        folder: str, keyframe_gen: Callable = Keyframes.n_frames_per_fps,
+        keyframe_args: Dict[str, Any] = None, size: Tuple[int, int] = (8, 8),
+        force=False, name: str = 'flat_6'):
     """
     Extrae las caracteristicas de todos los archivos dentro de la carpeta especificada
     y los guarda en una nueva carpeta.
 
-    :param carpeta: la carpeta desde la cuál obtener todos los videos.
+    :param folder: la carpeta desde la cuál obtener todos los videos.
     :param keyframe_gen: número de frames por segundo a extraer.
     :param keyframe_args: número de frames por segundo a extraer.
-    :param tamano: el tamaño del mapa al cual reducir la dimension de cada frame.
+    :param size: el tamaño del mapa al cual reducir la dimension de cada frame.
     :param force: si es que es Falso, no se reclaculan características.
     :param name: .
     """
@@ -87,19 +86,112 @@ def extraer_caracteristicas_videos(carpeta: str, keyframe_gen: Callable = Keyfra
         keyframe_args = {}
 
     # obtener todos los archivos en la carpeta
-    videos = os.listdir(carpeta)
+    videos = os.listdir(folder)
 
     # extraer la caracteristicas de cada comercial
     for video in videos:
         if video.endswith('.mp4'):
-            extraer_caracteristicas_video(f'{carpeta}/{video}', f'{carpeta}_car_{name}_{tamano}',
-                                          keyframe_gen=keyframe_gen, keyframe_args=keyframe_args, tamano=tamano,
-                                          force=force)
+            extract_features(
+                file=f'{folder}/{video}', save_path=f'{folder}_car_{name}_{size}',
+                keyframe_gen=keyframe_gen, keyframe_args=keyframe_args, size=size,
+                force=force)
 
     return
 
 
-def leer_caracteristicas(archivo: str) -> Tuple[numpy.ndarray, numpy.ndarray]:
+# TODO: generalize feature extraction to 1 method
+def extract_features_autoencoder(
+        file: str, save_path: str, autoencoder: AutoEncoder, shape: Tuple[int, int, int] = (64, 64, 3),
+        keyframe_gen: Callable = Keyframes.n_frames_per_fps, keyframe_args: Dict[str, Any] = None,
+        force=False):
+    """
+    Extrae la caracteristicas de un video y las guarda en un archivo con el mismo nombre del video,
+    dentro de la carpeta log. Mide el tiempo que tomó la extracción y la imprime.
+
+    :param file: archivo del video.
+    :param save_path: carpeta donde guardar las características.
+    :param autoencoder: el tamaño del mapa al cual reducir la dimension de la imagen.
+    :param shape:
+    :param keyframe_gen: número de frames por segundo a extraer.
+    :param keyframe_args: número de frames por segundo a extraer.
+    :param force: si es que es Falso, no se reclaculan características.
+    """
+    if keyframe_args is None:
+        keyframe_args = {}
+
+    # crear carpeta de características si es que es necesario
+    if not os.path.isdir(save_path):
+        os.mkdir(save_path)
+
+    # chequear si es que ya se calcularon las características
+    video_name = re.split('[/.]', file)[-2]
+    if not force and os.path.isfile(f'{save_path}/{video_name}.npy'):
+        print(f'Skipping video {video_name}')
+        return
+
+    print(f'Extracting features from video {video_name}')
+
+    # medir tiempo
+    t0 = time.time()
+
+    # extract frames
+    frames, ts = load_resize_frames(video=file, keyframe_gen=keyframe_gen, keyframe_args=keyframe_args, shape=shape)
+
+    # encode and transform
+    descriptors = autoencoder.encode(numpy.array(frames))
+    descriptors = numpy.insert(descriptors, 0, values=ts, axis=1)
+    descriptors = descriptors.astype('f4')
+
+    numpy.save(f'{save_path}/{video_name}.npy', descriptors)
+
+    duration = int(time.time() - t0)
+    print(f'feature extraction for {int(ts[-1])} seconds took {duration} seconds')
+
+    if os.path.exists(f'{save_path}/log.txt'):
+        log = open(f'{save_path}/log.txt', 'a')
+    else:
+        log = open(f'{save_path}/log.txt', 'w')
+
+    log.write(f'{int(ts[-1])}\t{duration}\n')
+    log.close()
+    return
+
+
+def extract_features_autoencoder_folder(
+        folder: str, autoencoder: AutoEncoder, shape: Tuple[int, int, int] = (64, 64, 3),
+        keyframe_gen: Callable = Keyframes.n_frames_per_fps, keyframe_args: Dict[str, Any] = None,
+        force=False, name: str = 'autoencoder'):
+    """
+    Extrae las caracteristicas de todos los archivos dentro de la carpeta especificada
+    y los guarda en una nueva carpeta.
+
+    :param folder: la carpeta desde la cuál obtener todos los videos.
+    :param autoencoder: el tamaño del mapa al cual reducir la dimension de cada frame.
+    :param shape: el tamaño del mapa al cual reducir la dimension de cada frame.
+    :param keyframe_gen: número de frames por segundo a extraer.
+    :param keyframe_args: número de frames por segundo a extraer.
+    :param force: si es que es Falso, no se reclaculan características.
+    :param name: .
+    """
+    if keyframe_args is None:
+        keyframe_args = {}
+
+    # obtener todos los archivos en la carpeta
+    videos = os.listdir(folder)
+
+    # extraer la caracteristicas de cada comercial
+    for video in videos:
+        if video.endswith('.mp4'):
+            extract_features_autoencoder(
+                f'{folder}/{video}', f'{folder}_car_{name}_{shape}',
+                autoencoder=autoencoder, shape=shape,
+                keyframe_gen=keyframe_gen, keyframe_args=keyframe_args,
+                force=force)
+
+    return
+
+
+def read_features(archivo: str) -> Tuple[numpy.ndarray, numpy.ndarray]:
     """
     Lee los datos de un archivo y las retorna en 2 arreglos de numpy, 1 para características y otro para etiquetas.
 
@@ -121,7 +213,7 @@ def leer_caracteristicas(archivo: str) -> Tuple[numpy.ndarray, numpy.ndarray]:
     return etiquetas, caracteristicas.astype('f4')
 
 
-def agrupar_caracteristicas(carpeta: str, tamano=(8, 8), recargar: bool = True) \
+def group_features(carpeta: str, tamano=(8, 8), recargar: bool = True) \
         -> Tuple[numpy.ndarray, numpy.ndarray]:
     """
     Agrupa todos los datos de la carpeta dada en 2 arreglos de numpy, 1 para características y otro para etiquetas.
@@ -153,7 +245,7 @@ def agrupar_caracteristicas(carpeta: str, tamano=(8, 8), recargar: bool = True) 
             continue
 
         # leer características y juntar con los arreglos.
-        etiquetas_video, caracteristicas_video = leer_caracteristicas(f'{carpeta}/{archivo}')
+        etiquetas_video, caracteristicas_video = read_features(f'{carpeta}/{archivo}')
         etiquetas = numpy.concatenate((etiquetas, etiquetas_video))
         caracteristicas = numpy.concatenate((caracteristicas, caracteristicas_video))
 
@@ -168,14 +260,26 @@ def agrupar_caracteristicas(carpeta: str, tamano=(8, 8), recargar: bool = True) 
 
 
 def main():
-    tamano = (8, 8)
-    fun = Keyframes.threshold_diff
-    args = {}  # {'n': 6}
-    name = 'threshold_1.3'
+    # extract_features_folder('../videos/Shippuden_low',
+    #                        keyframe_gen=Keyframes.window_max_diff, keyframe_args={'frames_per_window': 3},
+    #                        size=(8, 8), name='window_3')
 
-    extraer_caracteristicas_videos('../videos/Shippuden', keyframe_gen=fun, keyframe_args=args, tamano=tamano,
-                                   name=name, force=False)
-    agrupar_caracteristicas(f'../videos/Shippuden_car_{name}_{tamano}')
+    extract_features_folder('../videos/Shippuden_low',
+                            keyframe_gen=Keyframes.threshold_diff, keyframe_args={},
+                            size=(8, 8), name='threshold_1,3', force=True)
+
+    '''
+    fun = Keyframes.n_frames_per_fps
+    args = {'n': 6}
+    name = 'flat_6_autoencoder'
+
+    autoencoder = load_autoencoder('caracteristicas/model')
+    extract_features_autoencoder_folder(
+        '../videos/Shippuden_low',
+        autoencoder=autoencoder, shape=autoencoder.input_shape,
+        keyframe_gen=fun, keyframe_args=args,
+        name=name, force=False)
+    '''
     return
 
 
