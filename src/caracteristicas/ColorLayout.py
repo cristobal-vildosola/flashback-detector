@@ -53,7 +53,7 @@ def color_layout_descriptor(img, tamano=(8, 8)):
 
 if __name__ == '__main__':
 
-    img = cv2.imread('ejemplo.png')
+    img = cv2.imread('../utils/ejemplo.png')
     resized = cv2.resize(img, dsize=(8, 8), interpolation=cv2.INTER_AREA)
 
     img = cv2.resize(img, dsize=(600, 600))
