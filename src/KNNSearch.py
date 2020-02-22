@@ -72,7 +72,7 @@ def main(video: str):
 
     t0 = time.process_time()
     etiquetas, caracteristicas = group_features(f'../videos/Shippuden_car_{tamano}_{fps}',
-                                                tamano=tamano, recargar=True)
+                                                size=tamano, force=True)
 
     # buscar inicio y fin de las caracteristicas del video a buscar
     inicio = fin = -1

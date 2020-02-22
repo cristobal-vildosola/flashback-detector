@@ -1,12 +1,13 @@
 import time
-from typing import Any, Callable, Dict, Iterable, Tuple
+from typing import Tuple
 
 import cv2
 import numpy
 from keras.layers import Input, Conv2D, Flatten, MaxPooling2D, UpSampling2D
 from keras.models import Model, load_model
 
-import caracteristicas.Keyframes as Keyframes
+import keyframes.KeyframeSelector as Keyframes
+from features.FeatureExtractor import FeatureExtractor
 
 
 def model(
@@ -63,7 +64,7 @@ def model(
     return autoencoder, encoder
 
 
-class AutoEncoder:
+class AutoEncoder(FeatureExtractor):
     def __init__(
             self,
             input_shape: Tuple[int, int, int] = (256, 256, 3), cells: int = 3, convs: int = 2,
@@ -85,13 +86,23 @@ class AutoEncoder:
         self.input_shape = self.autoencoder.get_input_shape_at(0)[1:]
         self.output_size = self.encoder.output_shape[1]
 
-    def train(self, data: numpy.ndarray, epochs: int, batch_size: int = 32, validation_split: float = 0.2,
-              verbose: int = 2):
+    def adapt_input(self, data):
+        new_data = numpy.zeros((len(data), *self.input_shape), dtype='float32')
+
+        for i in range(len(data)):
+            new_data[i] = cv2.resize(data[i], dsize=self.input_shape[:2], interpolation=cv2.INTER_AREA)
+
+        return new_data / 255
+
+    def train(self, data: numpy.ndarray,
+              epochs: int, batch_size: int = 32, validation_split: float = 0.2,
+              verbose: int = 1):
 
         t = time.time()
+        adapted = self.adapt_input(data)
 
         self.autoencoder.fit(
-            data, data,
+            adapted, adapted,
             validation_split=validation_split,
             epochs=epochs,
             batch_size=batch_size,
@@ -102,32 +113,25 @@ class AutoEncoder:
         return
 
     def encode(self, data: numpy.ndarray):
-        if len(data.shape) == 3:
-            data = numpy.array([data, ])
-
         return self.encoder.predict(data)
-
-    def save(self, name: str = 'model'):
-        self.autoencoder.save(f'{name}-autoencoder.h5')
-        self.encoder.save(f'{name}-encoder.h5')
-        return
 
     def encode_decode(self, data: numpy.ndarray):
         return self.autoencoder.predict(data)
 
+    def extract_features(self, data):
+        return self.encode(self.adapt_input(data))
+
     def test(self, data: numpy.ndarray):
         # obtain reconstructed images
-        reconstructed = self.encode_decode(data)
+        reconstructed = self.encode_decode(self.adapt_input(data))
         reconstructed = (reconstructed.clip(0, 1) * 255).astype('uint8')
-
-        original = (data * 255).astype('uint8')
 
         # resize
         def resize(img: numpy.ndarray):
             return cv2.resize(img, dsize=(593, 336), interpolation=cv2.INTER_AREA)
 
         reconstructed = [resize(reconstructed[i]) for i in range(len(reconstructed))]
-        original = [resize(original[i]) for i in range(len(reconstructed))]
+        original = [resize(data[i]) for i in range(len(reconstructed))]
 
         i = 0
         while True:
@@ -143,28 +147,17 @@ class AutoEncoder:
 
         return
 
+    def save(self, name: str = 'model'):
+        self.autoencoder.save(f'{name}-autoencoder.h5')
+        self.encoder.save(f'{name}-encoder.h5')
+        return
+
 
 def load_autoencoder(name: str = 'model'):
     autoencoder = load_model(f'{name}-autoencoder.h5')
     encoder = load_model(f'{name}-encoder.h5')
+    print(f'model {name} loaded')
     return AutoEncoder(autoencoder=autoencoder, encoder=encoder)
-
-
-def load_resize_frames(
-        video: Iterable[str] = ('../../videos/Shippuden/003.mp4',), shape: Tuple[int, int, int] = (64, 64, 3),
-        keyframe_gen: Callable = Keyframes.n_frames_per_fps, keyframe_args: Dict[str, Any] = None,
-):
-    if keyframe_args is None:
-        keyframe_args = {'n': 1}
-
-    frames = []
-    ts = []
-
-    for t, frame in keyframe_gen(video, **keyframe_args):
-        frames.append(cv2.resize(frame, dsize=shape[:2], interpolation=cv2.INTER_AREA))
-        ts.append(t)
-
-    return numpy.array(frames), numpy.array(ts)
 
 
 def main():
@@ -172,6 +165,11 @@ def main():
 
     # input shape
     shape = (64, 64, 3)
+
+    # select keyframes and shuffle
+    selector = Keyframes.SimpleKS()
+    frames, _ = selector.select_keyframes('../../videos/Shippuden_low/003.mp4')
+    numpy.random.shuffle(frames)
 
     if load:
         autoencoder = load_autoencoder()
@@ -186,11 +184,6 @@ def main():
         # autoencoder.save()
 
     print(f'descriptor size: {autoencoder.output_size}')
-
-    # extract frames, normalize to [0, 1] and shuffle
-    frames, _ = load_resize_frames(video='../../videos/Shippuden/003.mp4', shape=shape)
-    frames = frames.astype('float32') / 255
-    numpy.random.shuffle(frames)
 
     autoencoder.test(frames[:30])
     return

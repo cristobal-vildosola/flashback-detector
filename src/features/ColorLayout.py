@@ -1,15 +1,35 @@
+from typing import Tuple
+
 import cv2
 import numpy as np
 
+from features.FeatureExtractor import FeatureExtractor
 
-def color_layout_descriptor(img, tamano=(8, 8)):
+
+class ColorLayoutExtractor(FeatureExtractor):
+    def __init__(self, size: Tuple[int, int]):
+        self.size = size
+        self.descriptor_size = size[0] * size[1] * 3
+
+    # TODO: test
+    def extract_features(self, data: np.ndarray):
+        n = len(data)
+        features = np.zeros((n, self.descriptor_size))
+
+        for i in range(n):
+            features[i] = color_layout_descriptor(data[i], self.size)
+
+        return features
+
+
+def color_layout_descriptor(img: np.ndarray, size: Tuple[int, int] = (8, 8)):
     """
     :param img: la imagen de la cual extraer características.
-    :param tamano: tamaño del descriptor.
-    :return: un vector de tamaño x 3, el descriptor de la imagen.
+    :param size: tamaño del descriptor.
+    :return: un vector de tamaño (size x 3), el descriptor de la imagen.
     """
-    rows = tamano[0]
-    cols = tamano[1]
+    rows = size[0]
+    cols = size[1]
     resized = cv2.resize(img, dsize=(cols, rows), interpolation=cv2.INTER_AREA)
 
     y, cr, cb = cv2.split(cv2.cvtColor(np.array(resized, dtype=np.uint8), cv2.COLOR_BGR2YCR_CB))
@@ -52,13 +72,12 @@ def color_layout_descriptor(img, tamano=(8, 8)):
 
 
 if __name__ == '__main__':
+    image = cv2.imread('../utils/ejemplo.png')
+    decriptor = cv2.resize(image, dsize=(8, 8), interpolation=cv2.INTER_AREA)
 
-    img = cv2.imread('../utils/ejemplo.png')
-    resized = cv2.resize(img, dsize=(8, 8), interpolation=cv2.INTER_AREA)
+    image = cv2.resize(image, dsize=(600, 600))
+    decriptor = cv2.resize(decriptor, dsize=(600, 600), interpolation=cv2.INTER_NEAREST)
 
-    img = cv2.resize(img, dsize=(600, 600))
-    resized = cv2.resize(resized, dsize=(600, 600), interpolation=cv2.INTER_NEAREST)
-
-    img = cv2.hconcat([img, resized])
-    cv2.imshow('', img)
-    res = cv2.waitKey(0)
+    image = cv2.hconcat([image, decriptor])
+    cv2.imshow('', image)
+    cv2.waitKey(0)

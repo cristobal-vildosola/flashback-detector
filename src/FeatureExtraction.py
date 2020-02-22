@@ -1,203 +1,120 @@
 import os
 import re
 import time
-from typing import Tuple, Callable, Dict, Any
+from typing import Tuple
 
 import numpy
 
-from caracteristicas.ColorLayout import color_layout_descriptor
-import caracteristicas.Keyframes as Keyframes
-from caracteristicas.AutoEncoder import AutoEncoder, load_autoencoder, load_resize_frames
+from features.ColorLayout import color_layout_descriptor
+import keyframes.KeyframeSelector as Keyframes
+from features.AutoEncoder import AutoEncoder
 
 
-def extract_features(
-        file: str, save_path: str, keyframe_gen: Callable = Keyframes.n_frames_per_fps,
-        keyframe_args: Dict[str, Any] = None, size: Tuple[int, int] = (8, 8),
+# TODO: make generic extract features (receives FeatureExtractor)
+
+
+def extract_features_directory(
+        dir_path: str,
+        keyframe_selector: Keyframes.KeyframeSelector = Keyframes.SimpleKS(),
+        size: Tuple[int, int] = (8, 8),
         force=False):
     """
-    Extrae la caracteristicas de un video y las guarda en un archivo con el mismo nombre del video,
-    dentro de la carpeta log. Mide el tiempo que tomó la extracción y la imprime.
+    Extracts features for the all the videos in the directory and saves them in a new dir depending on the
+    keyframe selector and the directory name.
 
-    :param file: archivo del video.
-    :param save_path: carpeta donde guardar las características.
-    :param keyframe_gen: número de frames por segundo a extraer.
-    :param keyframe_args: número de frames por segundo a extraer.
-    :param size: el tamaño del mapa al cual reducir la dimension de la imagen.
-    :param force: si es que es Falso, no se reclaculan características.
+    :param dir_path: the directoray containing the videos.
+    :param keyframe_selector: .
+    :param size: .
+    :param force: when True, calculates features even if it was done previously.
     """
-    if keyframe_args is None:
-        keyframe_args = {}
 
-    # crear carpeta de características si es que es necesario
-    if not os.path.isdir(save_path):
-        os.mkdir(save_path)
+    # create directory when necessary
+    root = '../video_features/'
+    if not os.path.isdir(root):
+        os.mkdir(root)
 
-    # chequear si es que ya se calcularon las características
-    video_name = re.split('[/.]', file)[-2]
-    if not force and os.path.isfile(f'{save_path}/{video_name}.npy'):
-        print(f'Skipping video {video_name}')
-        return
+    videos_name = re.split('[/.]', dir_path)[-1]
+    videos_path = f'{root}/{videos_name}'
+    if not os.path.isdir(videos_path):
+        os.mkdir(videos_path)
 
-    print(f'Extracting features from video {video_name}')
-    features = []
+    feats_path = f'{videos_path}/{keyframe_selector.name()}_{size}'
+    if not os.path.isdir(feats_path):
+        os.mkdir(feats_path)
 
-    # medir tiempo
-    t0 = time.time()
+    # create log file
+    log_path = f'{feats_path}/log.txt'
+    if not os.path.isfile(log_path) or force:
+        open(log_path, 'w').close()
 
-    t = 0
-    # recorrer todos los keyframes
-    for t, frame in keyframe_gen(file, **keyframe_args):
-        # extraer caracteristicas y guardar en el arreglo
-        descriptor = color_layout_descriptor(frame, size)
-        descriptor = numpy.insert(descriptor, 0, t)
-        features.append(descriptor.astype('f4'))
+    # obtain all files in the directory
+    videos = os.listdir(dir_path)
 
-    numpy.save(f'{save_path}/{video_name}.npy', numpy.array(features))
-
-    duration = int(time.time() - t0)
-    print(f'feature extraction for {int(t)} seconds took {duration} seconds')
-
-    if os.path.exists(f'{save_path}/log.txt'):
-        log = open(f'{save_path}/log.txt', 'a')
-    else:
-        log = open(f'{save_path}/log.txt', 'w')
-
-    log.write(f'{int(t)}\t{duration}\n')
-    log.close()
-    return
-
-
-def extract_features_folder(
-        folder: str, keyframe_gen: Callable = Keyframes.n_frames_per_fps,
-        keyframe_args: Dict[str, Any] = None, size: Tuple[int, int] = (8, 8),
-        force=False, name: str = 'flat_6'):
-    """
-    Extrae las caracteristicas de todos los archivos dentro de la carpeta especificada
-    y los guarda en una nueva carpeta.
-
-    :param folder: la carpeta desde la cuál obtener todos los videos.
-    :param keyframe_gen: número de frames por segundo a extraer.
-    :param keyframe_args: número de frames por segundo a extraer.
-    :param size: el tamaño del mapa al cual reducir la dimension de cada frame.
-    :param force: si es que es Falso, no se reclaculan características.
-    :param name: .
-    """
-    if keyframe_args is None:
-        keyframe_args = {}
-
-    # obtener todos los archivos en la carpeta
-    videos = os.listdir(folder)
-
-    # extraer la caracteristicas de cada comercial
+    # extract features from each video
     for video in videos:
         if video.endswith('.mp4'):
             extract_features(
-                file=f'{folder}/{video}', save_path=f'{folder}_car_{name}_{size}',
-                keyframe_gen=keyframe_gen, keyframe_args=keyframe_args, size=size,
-                force=force)
+                file_path=f'{dir_path}/{video}', feats_dir=feats_path,
+                keyframe_selector=keyframe_selector, size=size, force=force)
 
     return
 
 
-# TODO: generalize feature extraction to 1 method
-def extract_features_autoencoder(
-        file: str, save_path: str, autoencoder: AutoEncoder, shape: Tuple[int, int, int] = (64, 64, 3),
-        keyframe_gen: Callable = Keyframes.n_frames_per_fps, keyframe_args: Dict[str, Any] = None,
+def extract_features(
+        file_path: str,
+        feats_dir: str,
+        keyframe_selector: Keyframes.KeyframeSelector = Keyframes.SimpleKS(),
+        size: Tuple[int, int] = (8, 8),
         force=False):
     """
-    Extrae la caracteristicas de un video y las guarda en un archivo con el mismo nombre del video,
-    dentro de la carpeta log. Mide el tiempo que tomó la extracción y la imprime.
+    Extracts features for the video and saves them in the given dir.
 
-    :param file: archivo del video.
-    :param save_path: carpeta donde guardar las características.
-    :param autoencoder: el tamaño del mapa al cual reducir la dimension de la imagen.
-    :param shape:
-    :param keyframe_gen: número de frames por segundo a extraer.
-    :param keyframe_args: número de frames por segundo a extraer.
-    :param force: si es que es Falso, no se reclaculan características.
+    :param file_path: video path.
+    :param feats_dir: directory to save the features.
+    :param keyframe_selector: .
+    :param size: .
+    :param force: when True, calculates features even if it was done previously.
     """
-    if keyframe_args is None:
-        keyframe_args = {}
 
-    # crear carpeta de características si es que es necesario
-    if not os.path.isdir(save_path):
-        os.mkdir(save_path)
+    video_name = re.split('[/.]', file_path)[-2]
+    save_path = f'{feats_dir}/{video_name}.npy'
 
     # chequear si es que ya se calcularon las características
-    video_name = re.split('[/.]', file)[-2]
-    if not force and os.path.isfile(f'{save_path}/{video_name}.npy'):
+    if not force and os.path.isfile(save_path):
         print(f'Skipping video {video_name}')
         return
 
     print(f'Extracting features from video {video_name}')
 
+    # obtain keyframes
+    keyframes, timestamps = keyframe_selector.select_keyframes(file_path)
+
     # medir tiempo
     t0 = time.time()
+    features = []
 
-    # extract frames
-    frames, ts = load_resize_frames(video=file, keyframe_gen=keyframe_gen, keyframe_args=keyframe_args, shape=shape)
+    for i in range(len(keyframes)):
+        # extraer caracteristicas y guardar en el arreglo
+        descriptor = color_layout_descriptor(keyframes[i], size)
+        descriptor = numpy.insert(descriptor, 0, timestamps[i])
+        features.append(descriptor.astype('f4'))
 
-    # encode and transform
-    descriptors = autoencoder.encode(numpy.array(frames))
-    descriptors = numpy.insert(descriptors, 0, values=ts, axis=1)
-    descriptors = descriptors.astype('f4')
+    numpy.save(save_path, numpy.array(features))
 
-    numpy.save(f'{save_path}/{video_name}.npy', descriptors)
+    duration = time.time() - t0
+    print(f'feature extraction for {timestamps[-1]:.0f} seconds took {duration:.2f} seconds\n')
 
-    duration = int(time.time() - t0)
-    print(f'feature extraction for {int(ts[-1])} seconds took {duration} seconds')
-
-    if os.path.exists(f'{save_path}/log.txt'):
-        log = open(f'{save_path}/log.txt', 'a')
-    else:
-        log = open(f'{save_path}/log.txt', 'w')
-
-    log.write(f'{int(ts[-1])}\t{duration}\n')
+    log = open(f'{feats_dir}/log.txt', 'a')
+    log.write(f'{(timestamps[-1]):.0f}\t{duration:.2f}\n')
     log.close()
-    return
-
-
-def extract_features_autoencoder_folder(
-        folder: str, autoencoder: AutoEncoder, shape: Tuple[int, int, int] = (64, 64, 3),
-        keyframe_gen: Callable = Keyframes.n_frames_per_fps, keyframe_args: Dict[str, Any] = None,
-        force=False, name: str = 'autoencoder'):
-    """
-    Extrae las caracteristicas de todos los archivos dentro de la carpeta especificada
-    y los guarda en una nueva carpeta.
-
-    :param folder: la carpeta desde la cuál obtener todos los videos.
-    :param autoencoder: el tamaño del mapa al cual reducir la dimension de cada frame.
-    :param shape: el tamaño del mapa al cual reducir la dimension de cada frame.
-    :param keyframe_gen: número de frames por segundo a extraer.
-    :param keyframe_args: número de frames por segundo a extraer.
-    :param force: si es que es Falso, no se reclaculan características.
-    :param name: .
-    """
-    if keyframe_args is None:
-        keyframe_args = {}
-
-    # obtener todos los archivos en la carpeta
-    videos = os.listdir(folder)
-
-    # extraer la caracteristicas de cada comercial
-    for video in videos:
-        if video.endswith('.mp4'):
-            extract_features_autoencoder(
-                f'{folder}/{video}', f'{folder}_car_{name}_{shape}',
-                autoencoder=autoencoder, shape=shape,
-                keyframe_gen=keyframe_gen, keyframe_args=keyframe_args,
-                force=force)
-
     return
 
 
 def read_features(archivo: str) -> Tuple[numpy.ndarray, numpy.ndarray]:
     """
-    Lee los datos de un archivo y las retorna en 2 arreglos de numpy, 1 para características y otro para etiquetas.
+    reads the data for a given video and returns the features and tags separated in 2 numpy arrays.
 
-    :param archivo: el archivo a leer.
-
-    :return: 2 arreglos de numpy, uno para etiquetas y otro para características, en ese orden.
+    :param archivo: the file containing the features
     """
 
     datos = numpy.load(archivo)
@@ -213,30 +130,29 @@ def read_features(archivo: str) -> Tuple[numpy.ndarray, numpy.ndarray]:
     return etiquetas, caracteristicas.astype('f4')
 
 
-def group_features(carpeta: str, tamano=(8, 8), recargar: bool = True) \
+def group_features(directory: str, size=(8, 8), force: bool = True) \
         -> Tuple[numpy.ndarray, numpy.ndarray]:
     """
-    Agrupa todos los datos de la carpeta dada en 2 arreglos de numpy, 1 para características y otro para etiquetas.
-    Finalmente los guarda en archivos para reutilizarlos si se vuelve a intentar agrupar la misma carpeta.
+    Groups all the features and tags in a directory and saves them in a file each.
 
-    :param carpeta: carpeta donde están las características que agrupar.
-    :param recargar: determina si se deben recargar los archivos previamente generados (si es que existen).
-    :param tamano: tamaño del vector de características.
-
-    :return: 2 arreglos de numpy, uno para etiquetas y otro para características, en ese orden.
+    :param directory: directory containing the features.
+    :param size: .
+    :param force: when True, groups features even if it was done previously.
     """
-    # reutilizar archivos si ya se hizo agrupación antes
-    if os.path.isfile(f'{carpeta}/caracteristicas.npy') and os.path.isfile(f'{carpeta}/etiquetas.npy') and recargar:
-        caracteristicas = numpy.load(f'{carpeta}/caracteristicas.npy')
-        etiquetas = numpy.load(f'{carpeta}/etiquetas.npy')
+
+    # reload files if grouing was already done
+    if os.path.isfile(f'{directory}/caracteristicas.npy') and os.path.isfile(f'{directory}/etiquetas.npy') \
+            and not force:
+        caracteristicas = numpy.load(f'{directory}/caracteristicas.npy')
+        etiquetas = numpy.load(f'{directory}/etiquetas.npy')
 
         return etiquetas, caracteristicas
 
     # obtener todos los archivos en la carpeta
-    archivos = os.listdir(carpeta)
+    archivos = os.listdir(directory)
 
     etiquetas = numpy.empty(0, dtype=numpy.str)
-    caracteristicas = numpy.empty((0, tamano[0] * tamano[1] * 3), dtype='f4')
+    caracteristicas = numpy.empty((0, size[0] * size[1] * 3), dtype='f4')
 
     # leer las caracteristicas de todos los videos y agruparlas
     i = 0
@@ -245,7 +161,7 @@ def group_features(carpeta: str, tamano=(8, 8), recargar: bool = True) \
             continue
 
         # leer características y juntar con los arreglos.
-        etiquetas_video, caracteristicas_video = read_features(f'{carpeta}/{archivo}')
+        etiquetas_video, caracteristicas_video = read_features(f'{directory}/{archivo}')
         etiquetas = numpy.concatenate((etiquetas, etiquetas_video))
         caracteristicas = numpy.concatenate((caracteristicas, caracteristicas_video))
 
@@ -253,33 +169,16 @@ def group_features(carpeta: str, tamano=(8, 8), recargar: bool = True) \
         print(f'{caracteristicas.shape[0]:,d} lineas leídas en {i} archivos')
 
     # guardar archivos
-    numpy.save(f'{carpeta}/caracteristicas.npy', caracteristicas)
-    numpy.save(f'{carpeta}/etiquetas.npy', etiquetas)
+    numpy.save(f'{directory}/caracteristicas.npy', caracteristicas)
+    numpy.save(f'{directory}/etiquetas.npy', etiquetas)
 
     return etiquetas, caracteristicas
 
 
 def main():
-    # extract_features_folder('../videos/Shippuden_low',
-    #                        keyframe_gen=Keyframes.window_max_diff, keyframe_args={'frames_per_window': 3},
-    #                        size=(8, 8), name='window_3')
-
-    extract_features_folder('../videos/Shippuden_low',
-                            keyframe_gen=Keyframes.threshold_diff, keyframe_args={},
-                            size=(8, 8), name='threshold_1,3', force=True)
-
-    '''
-    fun = Keyframes.n_frames_per_fps
-    args = {'n': 6}
-    name = 'flat_6_autoencoder'
-
-    autoencoder = load_autoencoder('caracteristicas/model')
-    extract_features_autoencoder_folder(
-        '../videos/Shippuden_low',
-        autoencoder=autoencoder, shape=autoencoder.input_shape,
-        keyframe_gen=fun, keyframe_args=args,
-        name=name, force=False)
-    '''
+    extract_features_directory('../videos/Shippuden_low',
+                               keyframe_selector=Keyframes.ThresholdHistDiffKS(threshold=1.3),
+                               size=(8, 8), force=True)
     return
 
 
