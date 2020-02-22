@@ -5,42 +5,45 @@ from typing import Tuple
 
 import numpy
 
-from features.ColorLayout import color_layout_descriptor
 import keyframes.KeyframeSelector as Keyframes
-from features.AutoEncoder import AutoEncoder
+from features.AutoEncoder import AutoEncoderFE
+from features.ColorLayout import ColorLayoutFE
+from features.FeatureExtractor import FeatureExtractor
+
+VIDEOS_DIR = '../videos'
+FEATURES_DIR = '../video_features'
+FEATURES_FILE = 'features'
+TAG_FILE = 'tags'
 
 
-# TODO: make generic extract features (receives FeatureExtractor)
+def get_features_path(videos_folder, selector, extractor):
+    return f'{FEATURES_DIR}/{videos_folder}/{selector.name()}_{extractor.name()}'
+
+
+def get_videos_path(videos_folder):
+    return f'{VIDEOS_DIR}/{videos_folder}'
 
 
 def extract_features_directory(
-        dir_path: str,
-        keyframe_selector: Keyframes.KeyframeSelector = Keyframes.SimpleKS(),
-        size: Tuple[int, int] = (8, 8),
-        force=False):
+        videos_folder: str,
+        selector: Keyframes.KeyframeSelector = Keyframes.SimpleKS(),
+        extractor: FeatureExtractor = ColorLayoutFE(),
+        force=False
+):
     """
-    Extracts features for the all the videos in the directory and saves them in a new dir depending on the
-    keyframe selector and the directory name.
+    Extracts features for the all the videos in the directory and saves them in a new directory obtained using
+    get_features_path.
 
-    :param dir_path: the directoray containing the videos.
-    :param keyframe_selector: .
-    :param size: .
+    :param videos_folder: the directory containing the videos.
+    :param selector: .
+    :param extractor: .
     :param force: when True, calculates features even if it was done previously.
     """
 
     # create directory when necessary
-    root = '../video_features/'
-    if not os.path.isdir(root):
-        os.mkdir(root)
-
-    videos_name = re.split('[/.]', dir_path)[-1]
-    videos_path = f'{root}/{videos_name}'
-    if not os.path.isdir(videos_path):
-        os.mkdir(videos_path)
-
-    feats_path = f'{videos_path}/{keyframe_selector.name()}_{size}'
+    feats_path = get_features_path(videos_folder, selector=selector, extractor=extractor)
     if not os.path.isdir(feats_path):
-        os.mkdir(feats_path)
+        os.makedirs(feats_path)
 
     # create log file
     log_path = f'{feats_path}/log.txt'
@@ -48,38 +51,46 @@ def extract_features_directory(
         open(log_path, 'w').close()
 
     # obtain all files in the directory
-    videos = os.listdir(dir_path)
+    videos_path = get_videos_path(videos_folder)
+    videos = os.listdir(videos_path)
 
     # extract features from each video
     for video in videos:
         if video.endswith('.mp4'):
             extract_features(
-                file_path=f'{dir_path}/{video}', feats_dir=feats_path,
-                keyframe_selector=keyframe_selector, size=size, force=force)
+                file_path=f'{videos_path}/{video}', save_dir=feats_path,
+                selector=selector, extractor=extractor, force=force)
 
+    # group all features into 2 files (features and tags)
+    group_features(
+        videos_folder=videos_folder,
+        selector=selector,
+        extractor=extractor,
+        force=force)
     return
 
 
 def extract_features(
         file_path: str,
-        feats_dir: str,
-        keyframe_selector: Keyframes.KeyframeSelector = Keyframes.SimpleKS(),
-        size: Tuple[int, int] = (8, 8),
-        force=False):
+        save_dir: str,
+        selector: Keyframes.KeyframeSelector = Keyframes.SimpleKS(),
+        extractor: FeatureExtractor = ColorLayoutFE(),
+        force=False
+):
     """
     Extracts features for the video and saves them in the given dir.
 
     :param file_path: video path.
-    :param feats_dir: directory to save the features.
-    :param keyframe_selector: .
-    :param size: .
+    :param save_dir: directory to save the features.
+    :param selector: .
+    :param extractor: .
     :param force: when True, calculates features even if it was done previously.
     """
 
     video_name = re.split('[/.]', file_path)[-2]
-    save_path = f'{feats_dir}/{video_name}.npy'
+    save_path = f'{save_dir}/{video_name}.npy'
 
-    # chequear si es que ya se calcularon las características
+    # skip already processed videos
     if not force and os.path.isfile(save_path):
         print(f'Skipping video {video_name}')
         return
@@ -87,98 +98,113 @@ def extract_features(
     print(f'Extracting features from video {video_name}')
 
     # obtain keyframes
-    keyframes, timestamps = keyframe_selector.select_keyframes(file_path)
+    keyframes, timestamps = selector.select_keyframes(file_path)
 
-    # medir tiempo
+    # measure time
     t0 = time.time()
-    features = []
 
-    for i in range(len(keyframes)):
-        # extraer caracteristicas y guardar en el arreglo
-        descriptor = color_layout_descriptor(keyframes[i], size)
-        descriptor = numpy.insert(descriptor, 0, timestamps[i])
-        features.append(descriptor.astype('f4'))
+    # extract features and combine with timestamps
+    features = extractor.extract_features(keyframes)
+    features = numpy.insert(features, 0, values=timestamps, axis=1)
+    features = features.astype('f4')
 
+    # save feats
     numpy.save(save_path, numpy.array(features))
 
     duration = time.time() - t0
-    print(f'feature extraction for {timestamps[-1]:.0f} seconds took {duration:.2f} seconds\n')
+    print(f'feature extraction for {len(timestamps)} frames took {duration:.2f} seconds\n')
 
-    log = open(f'{feats_dir}/log.txt', 'a')
+    # log time required
+    log = open(f'{save_dir}/log.txt', 'a')
     log.write(f'{(timestamps[-1]):.0f}\t{duration:.2f}\n')
     log.close()
     return
 
 
-def read_features(archivo: str) -> Tuple[numpy.ndarray, numpy.ndarray]:
+def read_features(file: str) -> Tuple[numpy.ndarray, numpy.ndarray]:
     """
     reads the data for a given video and returns the features and tags separated in 2 numpy arrays.
 
-    :param archivo: the file containing the features
+    :param file: the file containing the features
     """
 
-    datos = numpy.load(archivo)
-    caracteristicas = datos[:, 1:]
+    datos = numpy.load(file)
+    features = datos[:, 1:]
 
-    # generar etiquetas
-    nombre = re.split('[/.]', archivo)[-2]
-    etiqueta_list = []
+    # generar tags
+    video_name = re.split('[/.]', file)[-2]
+    tags = []
     for i in range(datos.shape[0]):
-        etiqueta_list.append(f'{nombre} # {datos[i][0]} # {i + 1}')
+        tags.append(f'{video_name} # {datos[i][0]} # {i + 1}')
 
-    etiquetas = numpy.array(etiqueta_list)
-    return etiquetas, caracteristicas.astype('f4')
+    tags = numpy.array(tags)
+    return tags, features.astype('f4')
 
 
-def group_features(directory: str, size=(8, 8), force: bool = True) \
-        -> Tuple[numpy.ndarray, numpy.ndarray]:
+def group_features(
+        videos_folder: str,
+        selector: Keyframes.KeyframeSelector,
+        extractor: FeatureExtractor,
+        force: bool = False
+) -> Tuple[numpy.ndarray, numpy.ndarray]:
     """
     Groups all the features and tags in a directory and saves them in a file each.
 
-    :param directory: directory containing the features.
-    :param size: .
+    :param videos_folder: the directory containing the videos.
+    :param selector: .
+    :param extractor: .
     :param force: when True, groups features even if it was done previously.
     """
+    # full path to the features directory
+    directory = get_features_path(videos_folder=videos_folder, selector=selector, extractor=extractor)
 
-    # reload files if grouing was already done
-    if os.path.isfile(f'{directory}/caracteristicas.npy') and os.path.isfile(f'{directory}/etiquetas.npy') \
+    # reload files if grouping was already done
+    if os.path.isfile(f'{directory}/{FEATURES_FILE}.npy') \
+            and os.path.isfile(f'{directory}/{TAG_FILE}.npy') \
             and not force:
-        caracteristicas = numpy.load(f'{directory}/caracteristicas.npy')
-        etiquetas = numpy.load(f'{directory}/etiquetas.npy')
+        all_features = numpy.load(f'{directory}/{FEATURES_FILE}.npy')
+        all_tags = numpy.load(f'{directory}/{TAG_FILE}.npy')
 
-        return etiquetas, caracteristicas
+        return all_tags, all_features
 
-    # obtener todos los archivos en la carpeta
-    archivos = os.listdir(directory)
+    # obtain all files in the directory
+    files = os.listdir(directory)
 
-    etiquetas = numpy.empty(0, dtype=numpy.str)
-    caracteristicas = numpy.empty((0, size[0] * size[1] * 3), dtype='f4')
+    all_tags = numpy.empty(0, dtype=numpy.str)
+    all_features = numpy.empty((0, extractor.size()), dtype='f4')
 
-    # leer las caracteristicas de todos los videos y agruparlas
+    # reads all the features files and groups them in one
     i = 0
-    for archivo in archivos:
-        if not archivo.endswith('.npy') or archivo == 'caracteristicas.npy' or archivo == 'etiquetas.npy':
+    for file in files:
+        if not file.endswith('.npy') or file == f'{FEATURES_FILE}.npy' or file == f'{TAG_FILE}.npy':
             continue
 
         # leer características y juntar con los arreglos.
-        etiquetas_video, caracteristicas_video = read_features(f'{directory}/{archivo}')
-        etiquetas = numpy.concatenate((etiquetas, etiquetas_video))
-        caracteristicas = numpy.concatenate((caracteristicas, caracteristicas_video))
+        tags, features = read_features(f'{directory}/{file}')
+        all_tags = numpy.concatenate((all_tags, tags))
+        all_features = numpy.concatenate((all_features, features))
 
         i += 1
-        print(f'{caracteristicas.shape[0]:,d} lineas leídas en {i} archivos')
+        print(f'{all_features.shape[0]:,d} feats read in {i} file')
 
-    # guardar archivos
-    numpy.save(f'{directory}/caracteristicas.npy', caracteristicas)
-    numpy.save(f'{directory}/etiquetas.npy', etiquetas)
+    # save files
+    numpy.save(f'{directory}/{FEATURES_FILE}.npy', all_features)
+    numpy.save(f'{directory}/{TAG_FILE}.npy', all_tags)
 
-    return etiquetas, caracteristicas
+    return all_tags, all_features
 
 
 def main():
-    extract_features_directory('../videos/Shippuden_low',
-                               keyframe_selector=Keyframes.ThresholdHistDiffKS(threshold=1.3),
-                               size=(8, 8), force=True)
+    videos_folder = 'Shippuden_low'
+    selector = Keyframes.SimpleKS(n=6)
+    extractor = ColorLayoutFE(size=8)
+    force = True
+
+    extract_features_directory(
+        videos_folder=videos_folder,
+        selector=selector,
+        extractor=extractor,
+        force=force)
     return
 
 

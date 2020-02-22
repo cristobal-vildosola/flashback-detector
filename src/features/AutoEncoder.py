@@ -10,7 +10,7 @@ import keyframes.KeyframeSelector as Keyframes
 from features.FeatureExtractor import FeatureExtractor
 
 
-def model(
+def create_model(
         input_shape: Tuple[int, int, int] = (256, 256, 3), cells: int = 3, convs: int = 2,
         kernel_size: int = 3, filters: int = 16, activation: str = 'relu', pool_size: int = 2,
         output_activation: str = 'sigmoid',
@@ -64,17 +64,17 @@ def model(
     return autoencoder, encoder
 
 
-class AutoEncoder(FeatureExtractor):
+class AutoEncoderFE(FeatureExtractor):
     def __init__(
             self,
             input_shape: Tuple[int, int, int] = (256, 256, 3), cells: int = 3, convs: int = 2,
             kern_size: int = 3, filters: int = 16, activation: str = 'relu',
             pool_size: int = 2, output_activation: str = 'sigmoid',
-            autoencoder=None, encoder=None,
+            autoencoder=None, encoder=None, name: str = 'model',
     ):
 
         if autoencoder is None and encoder is None:
-            autoencoder, encoder = model(
+            autoencoder, encoder = create_model(
                 input_shape=input_shape, cells=cells, convs=convs,
                 kernel_size=kern_size, filters=filters, activation=activation,
                 pool_size=pool_size, output_activation=output_activation
@@ -82,6 +82,7 @@ class AutoEncoder(FeatureExtractor):
 
         self.autoencoder = autoencoder
         self.encoder = encoder
+        self.name = name
 
         self.input_shape = self.autoencoder.get_input_shape_at(0)[1:]
         self.output_size = self.encoder.output_shape[1]
@@ -147,17 +148,23 @@ class AutoEncoder(FeatureExtractor):
 
         return
 
-    def save(self, name: str = 'model'):
-        self.autoencoder.save(f'{name}-autoencoder.h5')
-        self.encoder.save(f'{name}-encoder.h5')
+    def save(self):
+        self.autoencoder.save(f'{self.name}-autoencoder.h5')
+        self.encoder.save(f'{self.name}-encoder.h5')
         return
+
+    def size(self) -> int:
+        return self.output_size
+
+    def name(self) -> str:
+        return f'AE_{self.name}'
 
 
 def load_autoencoder(name: str = 'model'):
     autoencoder = load_model(f'{name}-autoencoder.h5')
     encoder = load_model(f'{name}-encoder.h5')
     print(f'model {name} loaded')
-    return AutoEncoder(autoencoder=autoencoder, encoder=encoder)
+    return AutoEncoderFE(autoencoder=autoencoder, encoder=encoder, name=name)
 
 
 def main():
@@ -167,7 +174,7 @@ def main():
     shape = (64, 64, 3)
 
     # select keyframes and shuffle
-    selector = Keyframes.SimpleKS()
+    selector = Keyframes.SimpleKS(n=1)
     frames, _ = selector.select_keyframes('../../videos/Shippuden_low/003.mp4')
     numpy.random.shuffle(frames)
 
@@ -178,7 +185,7 @@ def main():
 
     else:
         # best: tanh-tanh, second: tanh-relu
-        autoencoder = AutoEncoder(input_shape=shape, cells=4, convs=2, activation='tanh', output_activation='tanh')
+        autoencoder = AutoEncoderFE(input_shape=shape, cells=4, convs=2, activation='tanh', output_activation='tanh')
 
         # autoencoder.train(frames, epochs=50, batch_size=32)
         # autoencoder.save()

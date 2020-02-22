@@ -6,10 +6,10 @@ import numpy as np
 from features.FeatureExtractor import FeatureExtractor
 
 
-class ColorLayoutExtractor(FeatureExtractor):
-    def __init__(self, size: Tuple[int, int]):
+class ColorLayoutFE(FeatureExtractor):
+    def __init__(self, size: int = 8):
         self.size = size
-        self.descriptor_size = size[0] * size[1] * 3
+        self.descriptor_size = size ** 2 * 3
 
     # TODO: test
     def extract_features(self, data: np.ndarray):
@@ -21,19 +21,25 @@ class ColorLayoutExtractor(FeatureExtractor):
 
         return features
 
+    def size(self) -> int:
+        return self.size ** 2 * 3
 
-def color_layout_descriptor(img: np.ndarray, size: Tuple[int, int] = (8, 8)):
-    """
-    :param img: la imagen de la cual extraer características.
-    :param size: tamaño del descriptor.
-    :return: un vector de tamaño (size x 3), el descriptor de la imagen.
-    """
-    rows = size[0]
-    cols = size[1]
-    resized = cv2.resize(img, dsize=(cols, rows), interpolation=cv2.INTER_AREA)
+    def name(self) -> str:
+        return f'CL_{self.size}'
 
+
+def color_layout_descriptor(img: np.ndarray, size: int = 8):
+    """
+    extracts the Color Layout descriptor for the given image
+
+    :param img: the image to process
+    :param size: size of the descriptor.
+    """
+    # resize to desired size and transform color
+    resized = cv2.resize(img, dsize=(size, size), interpolation=cv2.INTER_AREA)
     y, cr, cb = cv2.split(cv2.cvtColor(np.array(resized, dtype=np.uint8), cv2.COLOR_BGR2YCR_CB))
 
+    # calculate discrete coscine transform
     dct_y = cv2.dct(np.float32(y))
     dct_cb = cv2.dct(np.float32(cb))
     dct_cr = cv2.dct(np.float32(cr))
@@ -46,9 +52,10 @@ def color_layout_descriptor(img: np.ndarray, size: Tuple[int, int] = (8, 8)):
     flipped_dct_cb = np.fliplr(dct_cb)
     flipped_dct_cr = np.fliplr(dct_cr)
 
+    # traverse matrixes in diagonal order
     flip = True
-    for i in range(rows + cols - 1):
-        k_diag = rows - 1 - i
+    for i in range(size * 2 - 1):
+        k_diag = size - 1 - i
         diag_y = np.diag(flipped_dct_y, k=k_diag)
         diag_cb = np.diag(flipped_dct_cb, k=k_diag)
         diag_cr = np.diag(flipped_dct_cr, k=k_diag)
