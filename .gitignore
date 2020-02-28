@@ -1,4 +1,6 @@
 .idea/
 venv/
+
 videos/
-video_features/
+videos_features/
+videos_neighbours/

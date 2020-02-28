@@ -7,7 +7,7 @@ class FeatureExtractor(ABC):
         pass
 
     @abstractmethod
-    def size(self) -> int:
+    def descriptor_size(self) -> int:
         pass
 
     @abstractmethod

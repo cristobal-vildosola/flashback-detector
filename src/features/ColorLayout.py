@@ -1,5 +1,3 @@
-from typing import Tuple
-
 import cv2
 import numpy as np
 
@@ -9,19 +7,17 @@ from features.FeatureExtractor import FeatureExtractor
 class ColorLayoutFE(FeatureExtractor):
     def __init__(self, size: int = 8):
         self.size = size
-        self.descriptor_size = size ** 2 * 3
 
-    # TODO: test
     def extract_features(self, data: np.ndarray):
         n = len(data)
-        features = np.zeros((n, self.descriptor_size))
+        features = np.zeros((n, self.descriptor_size()))
 
         for i in range(n):
             features[i] = color_layout_descriptor(data[i], self.size)
 
         return features
 
-    def size(self) -> int:
+    def descriptor_size(self) -> int:
         return self.size ** 2 * 3
 
     def name(self) -> str:

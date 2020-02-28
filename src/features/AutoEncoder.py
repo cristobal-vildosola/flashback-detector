@@ -70,7 +70,7 @@ class AutoEncoderFE(FeatureExtractor):
             input_shape: Tuple[int, int, int] = (256, 256, 3), cells: int = 3, convs: int = 2,
             kern_size: int = 3, filters: int = 16, activation: str = 'relu',
             pool_size: int = 2, output_activation: str = 'sigmoid',
-            autoencoder=None, encoder=None, name: str = 'model',
+            autoencoder=None, encoder=None, model_name: str = 'model',
     ):
 
         if autoencoder is None and encoder is None:
@@ -82,18 +82,24 @@ class AutoEncoderFE(FeatureExtractor):
 
         self.autoencoder = autoencoder
         self.encoder = encoder
-        self.name = name
+        self.model_name = model_name
 
         self.input_shape = self.autoencoder.get_input_shape_at(0)[1:]
         self.output_size = self.encoder.output_shape[1]
 
     def adapt_input(self, data):
+        t0 = time.time()
         new_data = numpy.zeros((len(data), *self.input_shape), dtype='float32')
 
         for i in range(len(data)):
-            new_data[i] = cv2.resize(data[i], dsize=self.input_shape[:2], interpolation=cv2.INTER_AREA)
+            new_data[i] = cv2.resize(data[i], dsize=self.input_shape[:2], interpolation=cv2.INTER_AREA) / 255
 
-        return new_data / 255
+        duration = time.time() - t0
+        print(f'resizing {len(data)} frames took {duration:.2f} seconds')
+        log = open('resizing-log.txt', 'a')
+        log.write(f'{len(data):.0f}\t{duration:.2f}\n')
+        log.close()
+        return new_data
 
     def train(self, data: numpy.ndarray,
               epochs: int, batch_size: int = 32, validation_split: float = 0.2,
@@ -149,25 +155,29 @@ class AutoEncoderFE(FeatureExtractor):
         return
 
     def save(self):
-        self.autoencoder.save(f'{self.name}-autoencoder.h5')
-        self.encoder.save(f'{self.name}-encoder.h5')
+        self.autoencoder.save(f'{self.model_name}-autoencoder.h5')
+        self.encoder.save(f'{self.model_name}-encoder.h5')
         return
 
-    def size(self) -> int:
+    def descriptor_size(self) -> int:
         return self.output_size
 
     def name(self) -> str:
-        return f'AE_{self.name}'
+        return f'AE_{self.model_name}'
 
+    @staticmethod
+    def load_autoencoder(name: str = 'model'):
+        autoencoder = load_model(f'{name}-autoencoder.h5')
+        encoder = load_model(f'{name}-encoder.h5')
 
-def load_autoencoder(name: str = 'model'):
-    autoencoder = load_model(f'{name}-autoencoder.h5')
-    encoder = load_model(f'{name}-encoder.h5')
-    print(f'model {name} loaded')
-    return AutoEncoderFE(autoencoder=autoencoder, encoder=encoder, name=name)
+        # remove / from the name to avoid nested directories
+        name = name.replace('/', '_')
+        print(f'model {name} loaded')
+        return AutoEncoderFE(autoencoder=autoencoder, encoder=encoder, model_name=name)
 
 
 def main():
+    numpy.random.seed(1209)
     load = True
 
     # input shape
@@ -179,7 +189,7 @@ def main():
     numpy.random.shuffle(frames)
 
     if load:
-        autoencoder = load_autoencoder()
+        autoencoder = AutoEncoderFE.load_autoencoder()
         shape = autoencoder.input_shape
         print(f'input size: {shape}')
 
@@ -192,10 +202,12 @@ def main():
 
     print(f'descriptor size: {autoencoder.output_size}')
 
+    for descriptor in autoencoder.extract_features(frames[:30]):
+        print(descriptor)
+
     autoencoder.test(frames[:30])
     return
 
 
 if __name__ == '__main__':
-    numpy.random.seed(1209)
     main()
