@@ -1,8 +1,11 @@
 import os
 import re
-import sys
 import time
 from typing import List
+
+import keyframes.KeyframeSelector as Keyframes
+from features.ColorLayout import ColorLayoutFE
+from utils.files import get_processed_path
 
 
 class Frame:
@@ -230,14 +233,15 @@ def buscar_secuencias(video: str, max_errores_continuos: int = 7, tiempo_minimo:
     return
 
 
-def main(video: str):
-    tamano = (8, 8)
-    fps = 6
-
-    buscar_secuencias(f'../videos/cercanos_{tamano}_{fps}/{video}.txt',
+def main():
+    video_name = '417'
+    processed_path = get_processed_path(
+        videos_folder='Shippuden_low', selector=Keyframes.SimpleKS(), extractor=ColorLayoutFE()
+    )
+    buscar_secuencias(f'{processed_path}/{video_name}.txt',
                       max_errores_continuos=6, tiempo_minimo=5, max_offset=0.5)
     return
 
 
 if __name__ == '__main__':
-    main('417')
+    main()

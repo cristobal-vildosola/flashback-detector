@@ -4,99 +4,98 @@ import time
 
 import numpy
 
-from busqueda.LSH import LSHIndex
-from busqueda.FlannIndex import Linear
-from FeatureExtraction import read_features, group_features
+import keyframes.KeyframeSelector as Keyframes
+from utils.files import read_features, group_features, get_features_path, get_processed_path
+from features.ColorLayout import ColorLayoutFE
+from indexes.LSHIndex import LSHIndex
+from features.FeatureExtractor import FeatureExtractor
 
 
-def frames_mas_cercanos_video(archivo: str, carpeta_log: str, indice: LSHIndex, k: int = 5):
+def closest_neighbours(
+        video_name: str,
+        videos_folder: str,
+        selector: Keyframes.KeyframeSelector,
+        extractor: FeatureExtractor,
+        index: LSHIndex):
     """
-    Encuentra los k frames más cercanos a cada frame del video dado, dentro de todos los frames en una lista de Videos,
-    registra esta información en un log txt.
+    Searches the nearest neighbours for all the frames in a given video and saves them in a corresponding dir.
 
-    :param archivo: el archivo del cuál buscar frames cercanos.
-    :param carpeta_log: la carpeta en la cual guardar el log.
-    :param indice: el índice de busqueda a usar.
-    :param k: el número de frames cercanos a buscar.
+    :param video_name: the name of the target video.
+    :param videos_folder: the directory containing the videos.
+    :param selector: the keyframe selector used during feature extraction.
+    :param extractor: the feature extractor used during feature extraction.
+    :param index: the search index to use.
     """
 
-    # leer caracteristicas del video
-    etiquetas_video, caracteristicas_video = read_features(archivo)
+    # read target video features
+    features_path = get_features_path(videos_folder=videos_folder, selector=selector, extractor=extractor)
+    tags, features = read_features(f'{features_path}/{video_name}.npy')
 
-    print(f'Contando número de candidatos por frame')
+    # analize number of candidates to ensure enough neighbours are ound for each frame
+    print(f'counting number of candidates per frame')
+    candidates_num = []
+    for i in range(features.shape[0]):
+        cand = index.engine.candidate_count(features[i])
+        candidates_num.append(cand)
 
-    num_cand = []
-    for i in range(caracteristicas_video.shape[0]):
-        cand = indice.index.candidate_count(caracteristicas_video[i])
-        num_cand.append(cand)
-    print(f'Estadísitcas número candidatos\n'
-          f'promedio: {numpy.mean(num_cand):.1f}\n'
-          f'max: {max(num_cand)}  min: {min(num_cand)}')
+    print(f'candidates stats:\n'
+          f'\tmean: {numpy.mean(candidates_num):.1f}\n'
+          f'\tmax: {max(candidates_num)}\n'
+          f'\tmin: {min(candidates_num)}')
 
-    res = input('desea continuar? (y/n) ')
+    res = input('continue? (y/n) ')
     if res.lower() != 'y':
         return
 
-    # abrir log
-    nombre = re.split('[/.]', archivo)[-2]
-    if not os.path.isdir(carpeta_log):
-        os.mkdir(carpeta_log)
-    log = open(f'{carpeta_log}/{nombre}.txt', 'w')
+    # open log
+    processed_path = get_processed_path(videos_folder=videos_folder, selector=selector, extractor=extractor)
+    if not os.path.isdir(processed_path):
+        os.makedirs(processed_path)
+    neighbours_log = open(f'{processed_path}/{video_name}.txt', 'w')
 
-    print(f'buscando {k} frames más cercanos para {nombre}')
+    print(f'searching {index.k} closest frames for video {video_name}')
+    t0 = time.time()
 
-    # medir tiempo
-    t0 = time.process_time()
+    # search closest neighbours for each frame
+    for i in range(features.shape[0]):
+        closest = index.search(features[i])
 
-    # buscar los frames más cercanos de cada frame
-    for i in range(caracteristicas_video.shape[0]):
-        cercanos = indice.search(caracteristicas_video[i])
-        cercanos_str = ' | '.join(cercanos)
-        # registrar resultado
-        tiempo = re.split(' # ', etiquetas_video[i])[1]
-        log.write(f'{tiempo} $ {cercanos_str}\n')
+        # save results
+        tiempo = re.split(' # ', tags[i])[1]
+        neighbours_log.write(f'{tiempo} $ {" | ".join(closest)}\n')
 
-        if (i + 1) % (caracteristicas_video.shape[0] // 10) == 0:
-            print(f'searched {i + 1} vectors')
+        # display progress
+        if (i + 1) % (features.shape[0] // 10) == 0:
+            print(f'searched {i + 1} ({(i + 1) / features.shape[0]:%.0}) vectors'
+                  f'in {int(time.time() - t0):.1f} seconds')
 
-    log.close()
-    print(f'la búsqueda de {k} frames más cercanos de {caracteristicas_video.shape[0]} frames'
-          f' tomó {int(time.process_time() - t0)} segundos')
+    neighbours_log.close()
+    print(f'the search took {int(time.time() - t0):.1f} seconds for {features.shape[0]} frames')
     return
 
 
-def main(video: str):
-    fps = 6
-    tamano = (8, 8)
-    k = 50
+def main():
+    numpy.random.seed(1209)
+    video_name = '417'
+    videos_folder = 'Shippuden_low'
+    selector = Keyframes.SimpleKS()
+    extractor = ColorLayoutFE()
 
-    t0 = time.process_time()
-    etiquetas, caracteristicas = group_features(f'../videos/Shippuden_car_{tamano}_{fps}',
-                                                size=tamano, force=True)
+    t0 = time.time()
+    all_tags, all_features = group_features(videos_folder=videos_folder, selector=selector, extractor=extractor)
+    print(f'loading {all_features.shape[0]:,} features took {int(time.time() - t0)} seconds')
 
-    # buscar inicio y fin de las caracteristicas del video a buscar
-    inicio = fin = -1
-    for i in range(etiquetas.shape[0]):
-        if inicio == -1 and re.split(' # ', etiquetas[i])[0] == video:
-            inicio = i
-        if inicio != -1 and fin == -1 and re.split(' # ', etiquetas[i])[0] != video:
-            fin = i
+    index = LSHIndex(data=all_features, labels=all_tags, k=100, projections=3, bin_width=150, tables=2)
+    print(f'index construction took {index.build_time:.1f} seconds')
 
-    # eliminar características del video a buscar
-    caracteristicas = numpy.concatenate([caracteristicas[:inicio], caracteristicas[fin:]], axis=0)
-    etiquetas = numpy.concatenate([etiquetas[:inicio], etiquetas[fin:]], axis=0)
-
-    print(f'la agrupación de datos ({caracteristicas.shape[0]}) tomó {int(time.process_time() - t0)} segundos')
-
-    indice = LSHIndex(data=caracteristicas, labels=etiquetas, k=k, projections=3, bin_width=150, tables=2)
-    print(f'la construcción del índice tomó {indice.build_time:.1f} segundos')
-
-    frames_mas_cercanos_video(f'../videos/Shippuden_car_{tamano}_{fps}/{video}.npy',
-                              f'../videos/cercanos_{tamano}_{fps}',
-                              indice=indice, k=k)
-
+    closest_neighbours(
+        video_name=video_name,
+        videos_folder=videos_folder,
+        selector=selector,
+        extractor=extractor,
+        index=index)
     return
 
 
 if __name__ == '__main__':
-    main('417')
+    main()

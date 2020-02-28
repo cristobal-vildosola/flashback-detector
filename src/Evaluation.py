@@ -14,8 +14,8 @@ class Prediccion:
 
 
 def comparar_videos(prediccion: Prediccion):
-    amv = cv2.VideoCapture(f'../videos/Shippuden/{prediccion.video}.mp4')
-    cap = cv2.VideoCapture(f'../videos/Shippuden/{prediccion.capitulo}.mp4')
+    amv = cv2.VideoCapture(f'../videos/Shippuden_original/{prediccion.video}.mp4')
+    cap = cv2.VideoCapture(f'../videos/Shippuden_original/{prediccion.capitulo}.mp4')
 
     text = f'{int(prediccion.inicio_video / 60)}:{int(prediccion.inicio_video) % 60} ({prediccion.duracion:.1f}) ' + \
            f'capitulo {prediccion.capitulo} - {int(prediccion.inicio_cap / 60)}:{int(prediccion.inicio_cap) % 60}'
@@ -93,7 +93,7 @@ def evaluar_resultados(video: str):
     total = len(predicciones)
 
     tiempo_detectado = 0
-    amv = cv2.VideoCapture(f'../videos/Shippuden/{video}.mp4')
+    amv = cv2.VideoCapture(f'../videos/Shippuden_original/{video}.mp4')
     tiempo_total = amv.get(cv2.CAP_PROP_FRAME_COUNT) / amv.get(cv2.CAP_PROP_FPS)
 
     for prediccion in predicciones:

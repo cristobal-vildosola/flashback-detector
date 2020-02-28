@@ -3,7 +3,7 @@ from nearpy.distances.manhattan import ManhattanDistance
 from nearpy.filters.nearestfilter import NearestFilter
 from nearpy.hashes import RandomDiscretizedProjections
 
-from busqueda.OptimizedEngine import OptimizedEngine
+from indexes.OptimizedEngine import OptimizedEngine
 
 if __name__ == '__main__':
     dimension = 192

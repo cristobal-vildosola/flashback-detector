@@ -36,13 +36,13 @@ class OptimizedEngine(Engine):
         super().__init__(vectors.shape[1], lshashes, distance, fetch_vector_filters, vector_filters, storage)
         self.vectors = vectors
 
-        t0 = time.process_time()
+        t0 = time.time()
         for i in range(self.vectors.shape[0]):
             self.store_vector(i, i)
 
             if verbose and (i + 1) % (self.vectors.shape[0] // 10) == 0:
-                print(f'indexed {i + 1} ({round((i + 1) / self.vectors.shape[0] * 100)}%) vectors'
-                      f' in {time.process_time() - t0:.1f} seconds')
+                print(f'indexed {i + 1:,} ({round((i + 1) / self.vectors.shape[0] * 100)}%) vectors'
+                      f' in {time.time() - t0:.1f} seconds')
 
     def store_vector(self, i, data=None):
         """
