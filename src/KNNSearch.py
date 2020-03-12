@@ -5,13 +5,13 @@ import time
 import numpy
 
 import keyframes.KeyframeSelector as Keyframes
-from utils.files import read_features, group_features, get_features_path, get_processed_path
+from utils.files import read_features, group_features, get_features_path, get_neighbours_path
 from features.ColorLayout import ColorLayoutFE
 from indexes.LSHIndex import LSHIndex
 from features.FeatureExtractor import FeatureExtractor
 
 
-def closest_neighbours(
+def nearest_neighbours(
         video_name: str,
         videos_folder: str,
         selector: Keyframes.KeyframeSelector,
@@ -48,10 +48,10 @@ def closest_neighbours(
         return
 
     # open log
-    processed_path = get_processed_path(videos_folder=videos_folder, selector=selector, extractor=extractor)
-    if not os.path.isdir(processed_path):
-        os.makedirs(processed_path)
-    neighbours_log = open(f'{processed_path}/{video_name}.txt', 'w')
+    neighbours_path = get_neighbours_path(videos_folder=videos_folder, selector=selector, extractor=extractor)
+    if not os.path.isdir(neighbours_path):
+        os.makedirs(neighbours_path)
+    neighbours_log = open(f'{neighbours_path}/{video_name}.txt', 'w')
 
     print(f'searching {index.k} closest frames for video {video_name}')
     t0 = time.time()
@@ -78,7 +78,7 @@ def main():
     numpy.random.seed(1209)
     video_name = '417'
     videos_folder = 'Shippuden_low'
-    selector = Keyframes.SimpleKS()
+    selector = Keyframes.MaxHistDiffKS()
     extractor = ColorLayoutFE()
 
     t0 = time.time()
@@ -88,7 +88,7 @@ def main():
     index = LSHIndex(data=all_features, labels=all_tags, k=100, projections=3, bin_width=150, tables=2)
     print(f'index construction took {index.build_time:.1f} seconds')
 
-    closest_neighbours(
+    nearest_neighbours(
         video_name=video_name,
         videos_folder=videos_folder,
         selector=selector,

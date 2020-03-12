@@ -10,6 +10,7 @@ from features.FeatureExtractor import FeatureExtractor
 VIDEOS_DIR = '../videos'
 FEATURES_DIR = '../videos_features'
 NEIGHBOURS_DIR = '../videos_neighbours'
+RESULTS_DIR = '../videos_results'
 
 FEATURES_FILE = 'features'
 TAG_FILE = 'tags'
@@ -23,8 +24,12 @@ def get_features_path(videos_folder, selector, extractor):
     return f'{FEATURES_DIR}/{videos_folder}/{selector.name()}_{extractor.name()}'
 
 
-def get_processed_path(videos_folder, selector, extractor):
+def get_neighbours_path(videos_folder, selector, extractor):
     return f'{NEIGHBOURS_DIR}/{videos_folder}/{selector.name()}_{extractor.name()}'
+
+
+def get_results_path(videos_folder, selector, extractor):
+    return f'{RESULTS_DIR}/{videos_folder}/{selector.name()}_{extractor.name()}'
 
 
 def read_features(file: str) -> Tuple[np.ndarray, np.ndarray]:

@@ -1,245 +1,276 @@
 import os
-import re
 import time
 from typing import List
 
 import keyframes.KeyframeSelector as Keyframes
 from features.ColorLayout import ColorLayoutFE
-from utils.files import get_processed_path
+from features.FeatureExtractor import FeatureExtractor
+from utils.files import get_neighbours_path, get_results_path
 
 
 class Frame:
-    def __init__(self, video, tiempo, indice):
-        self.video = video
-        self.indice = indice
-        self.tiempo = tiempo
+    def __init__(self, video: str, timestamp: float, index: int):
+        self.video: str = video
+        self.timestamp: float = timestamp
+        self.index: int = index
 
 
-class Cercanos:
-    def __init__(self, tiempo: float, frames: List[Frame]):
-        self.tiempo = tiempo
-        self.frames = frames
+class Neighbours:
+    def __init__(self, timestamp: float, frames: List[Frame]):
+        self.timestamp: float = timestamp
+        self.frames: List[Frame] = frames
 
 
-def leer_cercanos(video: str) -> List[Cercanos]:
+def read_neighbours(neighbours_file: str) -> List[Neighbours]:
     """
-    Lee un archivo que contiene los frames más cercanos a cada frame de un video. Cada linea debe tener el siguiente
-    formato: 'tiempo $ comercial # tiempo # indice | comercial # tiempo # indice | ...'.
+    reads a neighbours file.
 
-    :param video: nombre del archivo que contiene la información
-
-    :return: una lista de Cercanos, objeto que almacena la información de una linea.
+    :param neighbours_file: full path to the neighbours file
     """
-    cercanos = []
-    videos = {}
+    neighbours_list = list()
+    videos = dict()
 
-    with open(video, 'r') as log:
-        for linea in log:
-            # separar tiempo de los frames.
-            tiempo, datos = linea.split(' $ ')
+    with open(neighbours_file, 'r') as log:
+        for line in log:
+            # split time from frames and parse
+            timestamp, neighbours = line.split(' $ ')
+            timestamp = float(timestamp)
+            neighbours = neighbours.split(' | ')
 
-            # parsear tiempo y separar frames.
-            tiempo = float(tiempo)
-            datos = datos.split(' | ')
-
-            # parsear frames.
+            # parse frames
             frames = []
-            for frame in datos:
-                if len(frame) < 3:
-                    print(linea)
+            for neighbour in neighbours:
+                # split neighbour data
+                neighbours_file, tiempo_frame, indice = neighbour.split(' # ')
+                frames.append(Frame(video=neighbours_file, timestamp=float(tiempo_frame), index=int(indice)))
 
-                video, tiempo_frame, indice = frame.split(' # ')
-                frames.append(Frame(video=video, tiempo=float(tiempo_frame), indice=int(indice)))
+                # count video ocurrences
+                videos[neighbours_file] = videos.get(neighbours_file, 0) + 1
 
-                if not video in videos:
-                    videos[video] = 0
-                videos[video] += 1
+            # add frame neighbours to the list
+            neighbours_list.append(Neighbours(timestamp=timestamp, frames=frames))
 
-            # agregar linea parseada a la lista
-            cercanos.append(Cercanos(frames=frames, tiempo=tiempo))
-
+    # print video ocurrences sorted by number
     print(sorted(videos.items(), key=lambda kv: kv[1], reverse=True))
 
-    return cercanos
+    return neighbours_list
 
 
-class Candidato:
+class Candidate:
 
-    def __init__(self, video: str, indice: int, tiempo_inicio: float, tiempo_clip_inicio: float):
-        self.video = video
-        self.indice = indice
+    def __init__(self, video: str, index: int, start_time: float, original_start_time: float):
+        self.video: str = video
+        self.index: int = index
 
-        self.tiempo_inicio = tiempo_inicio
-        self.tiempo_clip_inicio = tiempo_clip_inicio
-        self.duracion = 0
+        self.start_time: float = start_time
+        self.orig_start_time: float = original_start_time
+        self.duration: float = 0
 
-        self.errores = 0
-        self.aciertos = 0
-        self.errores_continuos = 0
+        self.missing: int = 0
+        self.found: int = 0
+        self.missing_streak: int = 0
 
-    def buscar_siguiente(self, cercanos: Cercanos, rango: int = 0):
-        self.indice += 1
+    def find_next(self, neighbours: Neighbours, threshold: int = 0):
+        self.index += 1
 
-        for frame in cercanos.frames:
+        for frame in neighbours.frames:
 
-            # buscar índice en el rango
-            if self.video == frame.video and (frame.indice - rango) <= self.indice <= (frame.indice + rango):
-                self.duracion = cercanos.tiempo - self.tiempo_clip_inicio
-                self.errores_continuos = 0
-                self.aciertos += 1
+            # find index in range
+            if self.video == frame.video and (frame.index - threshold) <= self.index <= (frame.index + threshold):
+                self.duration = neighbours.timestamp - self.orig_start_time
+
+                self.missing_streak = 0
+                self.found += 1
                 return
 
-        self.errores_continuos += 1
-        self.errores += 1
+        self.missing_streak += 1
+        self.missing += 1
         return
 
-    def sobrepuesto(self, cand):
-        if self.tiempo_clip_inicio <= cand.tiempo_clip_inicio < self.tiempo_clip_inicio + self.duracion or \
-                cand.tiempo_clip_inicio <= self.tiempo_clip_inicio < cand.tiempo_clip_inicio + cand.duracion:
+    def orig_end_time(self) -> float:
+        return self.orig_start_time + self.duration
+
+    def end_time(self) -> float:
+        return self.start_time + self.duration
+
+    def overlapped(self, cand: 'Candidate'):
+        if self.orig_start_time <= cand.orig_start_time < self.orig_end_time() or \
+                cand.orig_start_time <= self.orig_start_time < cand.orig_end_time():
             return True
 
         return False
 
-    def combinar(self, cand, max_offset: float):
-        if self.tiempo_clip_inicio <= cand.tiempo_clip_inicio and \
-                cand.tiempo_clip_inicio + cand.duracion <= self.tiempo_clip_inicio + self.duracion:
+    def combine(self, cand: 'Candidate', max_offset: float):
+        if self.orig_start_time <= cand.orig_start_time and \
+                self.orig_end_time() >= cand.orig_end_time():
             return
 
-        if cand.tiempo_clip_inicio <= self.tiempo_clip_inicio and \
-                self.tiempo_clip_inicio + self.duracion <= cand.tiempo_clip_inicio + cand.duracion:
+        if cand.orig_start_time <= self.orig_start_time and \
+                cand.orig_end_time() >= self.orig_end_time():
             return
 
-        offset = abs((self.tiempo_clip_inicio - cand.tiempo_clip_inicio) -
-                     (self.tiempo_inicio - cand.tiempo_inicio))
+        offset = abs((self.orig_start_time - cand.orig_start_time) -
+                     (self.start_time - cand.start_time))
+
         if offset > max_offset:
             return
 
-        self.duracion += abs(self.tiempo_clip_inicio - cand.tiempo_clip_inicio)
-        self.tiempo_clip_inicio = min(self.tiempo_clip_inicio, cand.tiempo_clip_inicio)
-        self.tiempo_inicio = min(self.tiempo_inicio, cand.tiempo_inicio)
+        self.duration = max(self.end_time(), cand.end_time()) - min(self.start_time, cand.start_time)
+        self.orig_start_time = min(self.orig_start_time, cand.orig_start_time)
+        self.start_time = min(self.start_time, cand.start_time)
         return
 
+    def score(self) -> float:
+        if self.found < 3:
+            return 0
+        return self.found / max(1, self.missing - self.missing_streak)
+
     def __str__(self):
-        return f'{self.tiempo_clip_inicio:.2f} {self.duracion:.2f} {self.video} {self.tiempo_inicio:.2f}'
+        return f'{self.orig_start_time:.2f} {self.duration:.2f} {self.video} {self.start_time:.2f} ({self.score():.2f})'
 
 
-def buscar_secuencias(video: str, max_errores_continuos: int = 7, tiempo_minimo: float = 1, max_offset: float = 0.0):
+def find_copies(
+        video_name: str,
+        videos_folder: str,
+        selector: Keyframes.KeyframeSelector,
+        extractor: FeatureExtractor,
+        max_missing_streak: int = 7,
+        minimun_duration: float = 1,
+        max_offset: float = 0):
     """
-    Busca comerciales en un archivo que contiene los k frames más cercanos a cada frame de un video y los registra en
-    un archivo.
+    Searches for copies in the given video.
 
-    :param video: la ubicación del archivo.
-    :param max_errores_continuos: máximos errores continuos para determinar que un clip terminó.
-    :param tiempo_minimo: tiempo mínimo para afirmar que un clip es válido.
-    :param max_offset: máxima distancia entre clips al combinarlos
+    :param video_name: the name of the target video.
+    :param videos_folder: the directory containing the videos.
+    :param selector: the keyframe selector used during feature extraction.
+    :param extractor: the feature extractor used during feature extraction.
+
+    :param max_missing_streak: .
+    :param minimun_duration: .
+    :param max_offset: .
     """
 
-    # nombre del video
-    nombre_video = re.split('[/.]', video)[-2]
-    print(f'buscando clips en {nombre_video}')
+    print(f'searching for copies in {video_name}')
     t0 = time.time()
 
-    # leer cercanos del video.
-    lista_cercanos = leer_cercanos(video)
+    # read neghbours
+    neighbours_path = get_neighbours_path(videos_folder=videos_folder, selector=selector, extractor=extractor)
+    neighbours_list = read_neighbours(f'{neighbours_path}/{video_name}.txt')
 
-    # lista de candidatos para buscar comerciales
-    candidatos = []
-    clips = []
+    # copies candidates
+    candidates = []
+    copies = []
 
-    # abrir log
-    nombre = re.split('[/.]', video)[-2]
-    if not os.path.isdir('../videos/results'):
-        os.mkdir('../videos/results')
-    log = open(f'../videos/results/{nombre}.txt', 'w')
+    for neighbours in neighbours_list:
+        closed_copies = []
 
-    for cercanos in lista_cercanos:
-        # se tiene una lista de comerciales para eliminar (especificos) y comerciales completados para eliminar todos
-        # los que coincidan en el nombre (general)
-        terminados = []
-
-        # buscar secuencias
-        for cand in candidatos:
-            cand.buscar_siguiente(cercanos, rango=1)
+        # search sequences
+        for cand in candidates:
+            cand.find_next(neighbours, threshold=1)
 
             # determinar fin de clip.
-            if cand.errores_continuos >= max_errores_continuos:
-                terminados.append(cand)
+            if cand.missing_streak >= max_missing_streak:
+                closed_copies.append(cand)
 
-        # eliminar candidatos terminados
-        for terminado in terminados:
-            candidatos.remove(terminado)
+        # delete closed copies
+        for closed in closed_copies:
+            candidates.remove(closed)
 
-            # determinar que el clip es valido
-            if terminado.duracion > 2 and terminado.aciertos >= terminado.errores - max_errores_continuos:
-                clips.append(terminado)
+            # if the candidate is good, add to the list
+            if closed.score() >= 1 and closed.duration > minimun_duration / 2:
+                copies.append(closed)
 
-        # agregar candidatos. todos los frames cercanos se consideran candidatos en principio
-        for frame in cercanos.frames:
+        # add copies candidates
+        for frame in neighbours.frames:
 
-            # chequear que no sea el frame actual en un candidato
-            agregar = True
-            for cand1 in candidatos:
-                if cand1.video == frame.video and cand1.indice == frame.indice:
-                    agregar = False
-                    break
+            # skip frames from the video being analized
+            if frame.video == video_name:
+                continue
 
-            if agregar:
-                candidatos.append(Candidato(video=frame.video, indice=frame.indice, tiempo_inicio=frame.tiempo,
-                                            tiempo_clip_inicio=cercanos.tiempo))
+            # check that it's not the current frame for any of the existing candidates
+            for copy_a in candidates:
+                if copy_a.video == frame.video and copy_a.index == frame.index:
+                    continue
 
-    # combinar clips cuando se pueda
-    for i in range(len(clips)):
-        cand1 = clips[i]
-        for j in range(i + 1, len(clips)):
-            cand2 = clips[j]
+            candidates.append(
+                Candidate(
+                    video=frame.video,
+                    index=frame.index,
+                    start_time=frame.timestamp,
+                    original_start_time=neighbours.timestamp))
 
-            if cand1.video == cand2.video and cand1.sobrepuesto(cand2):
-                cand1.combinar(cand2, max_offset)
+    # check reamining candidates
+    for cand in candidates:
+        if cand.score() >= 1 and closed.duration > minimun_duration / 2:
+            copies.append(cand)
 
-    # detectar clips sobrepuestos
-    sobrepuestos = set()
-    for i in range(len(clips)):
-        cand1 = clips[i]
-        for j in range(i + 1, len(clips)):
-            cand2 = clips[j]
+    print(f'{len(copies)} copies detected')
 
-            # si hay superposición dejar solo el más largo
-            if cand1.video == cand2.video and cand1.sobrepuesto(cand2):
-                if cand1.duracion > cand2.duracion:
-                    sobrepuestos.add(cand2)
+    # combine copies when possible
+    for i in range(len(copies)):
+        copy_a = copies[i]
+
+        for j in range(i + 1, len(copies)):
+            copy_b = copies[j]
+
+            if copy_a.video == copy_b.video and copy_a.overlapped(copy_b):
+                copy_a.combine(copy_b, max_offset)
+
+    # detect overlapped copies
+    overlapped = set()
+    for i in range(len(copies)):
+        copy_a = copies[i]
+        for j in range(i + 1, len(copies)):
+            copy_b = copies[j]
+
+            # if there's overlapping keep only the longest copy
+            if copy_a.video == copy_b.video and copy_a.overlapped(copy_b):
+                if copy_a.duration > copy_b.duration:
+                    overlapped.add(copy_b)
                 else:
-                    sobrepuestos.add(cand1)
+                    overlapped.add(copy_a)
 
-    # eliminar clips sobrepuestos
-    for clip in sobrepuestos:
-        clips.remove(clip)
+    # delete overlapped copies
+    for copy in overlapped:
+        copies.remove(copy)
 
-    # eliminar clips demasiado cortos
-    cortos = []
-    for clip in clips:
-        if clip.duracion < tiempo_minimo:
-            cortos.append(clip)
-    for clip in cortos:
-        clips.remove(clip)
+    print(f'{len(copies)} copies kept after combining and deleting overlapped videos')
 
-    # ordenar por capítulo
-    clips = sorted(clips, key=lambda x: x.video)
-    for clip in clips:
-        log.write(f'{clip}\n')
+    # delete short copies
+    too_short = []
+    for copy in copies:
+        if copy.duration < minimun_duration:
+            too_short.append(copy)
+    for copy in too_short:
+        copies.remove(copy)
 
-    # cerrar log
+    print(f'{len(copies)} copies kept after deleting short videos')
+
+    # open log
+    results_path = get_results_path(videos_folder=videos_folder, selector=selector, extractor=extractor)
+    if not os.path.isdir(results_path):
+        os.makedirs(results_path)
+    log = open(f'{results_path}/{video_name}.txt', 'w')
+
+    # sort by chapter and write to file
+    copies = sorted(copies, key=lambda x: x.video)
+    for copy in copies:
+        log.write(f'{copy}\n')
+
     log.close()
-    print(f'se encontraron {len(clips)} clips en {int(time.time() - t0)} segundos')
+    print(f'found {len(copies)} copies in {int(time.time() - t0)} seconds')
     return
 
 
 def main():
-    video_name = '417'
-    processed_path = get_processed_path(
-        videos_folder='Shippuden_low', selector=Keyframes.SimpleKS(), extractor=ColorLayoutFE()
-    )
-    buscar_secuencias(f'{processed_path}/{video_name}.txt',
-                      max_errores_continuos=6, tiempo_minimo=5, max_offset=0.5)
+    find_copies(
+        video_name='417',
+        videos_folder='Shippuden_low',
+        selector=Keyframes.SimpleKS(),
+        extractor=ColorLayoutFE(),
+        max_missing_streak=6,
+        minimun_duration=5,
+        max_offset=1)
     return
 
 
