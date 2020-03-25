@@ -3,8 +3,11 @@ import time
 from typing import List
 
 import keyframes.KeyframeSelector as Keyframes
+from features.AutoEncoder import AutoEncoderFE
 from features.ColorLayout import ColorLayoutFE
 from features.FeatureExtractor import FeatureExtractor
+from indexes.LSHIndex import BynaryLSHIndex
+from indexes.SearchIndex import SearchIndex
 from utils.files import get_neighbours_path, get_results_path
 
 
@@ -131,9 +134,9 @@ class Candidate:
 
 def find_copies(
         video_name: str,
-        videos_folder: str,
         selector: Keyframes.KeyframeSelector,
         extractor: FeatureExtractor,
+        index: SearchIndex,
         max_missing_streak: int = 7,
         minimun_duration: float = 1,
         max_offset: float = 0):
@@ -141,9 +144,9 @@ def find_copies(
     Searches for copies in the given video.
 
     :param video_name: the name of the target video.
-    :param videos_folder: the directory containing the videos.
     :param selector: the keyframe selector used during feature extraction.
     :param extractor: the feature extractor used during feature extraction.
+    :param index: the index used during similarity search.
 
     :param max_missing_streak: .
     :param minimun_duration: .
@@ -154,7 +157,7 @@ def find_copies(
     t0 = time.time()
 
     # read neghbours
-    neighbours_path = get_neighbours_path(videos_folder=videos_folder, selector=selector, extractor=extractor)
+    neighbours_path = get_neighbours_path(selector=selector, extractor=extractor, index=index)
     neighbours_list = read_neighbours(f'{neighbours_path}/{video_name}.txt')
 
     # copies candidates
@@ -201,7 +204,7 @@ def find_copies(
 
     # check reamining candidates
     for cand in candidates:
-        if cand.score() >= 1 and closed.duration > minimun_duration / 2:
+        if cand.score() >= 1 and cand.duration > minimun_duration / 2:
             copies.append(cand)
 
     print(f'{len(copies)} copies detected')
@@ -247,7 +250,7 @@ def find_copies(
     print(f'{len(copies)} copies kept after deleting short videos')
 
     # open log
-    results_path = get_results_path(videos_folder=videos_folder, selector=selector, extractor=extractor)
+    results_path = get_results_path(selector=selector, extractor=extractor, index=index)
     if not os.path.isdir(results_path):
         os.makedirs(results_path)
     log = open(f'{results_path}/{video_name}.txt', 'w')
@@ -265,9 +268,9 @@ def find_copies(
 def main():
     find_copies(
         video_name='417',
-        videos_folder='Shippuden_low',
-        selector=Keyframes.SimpleKS(),
-        extractor=ColorLayoutFE(),
+        selector=Keyframes.ThresholdHistDiffKS(threshold=1.3),
+        extractor=AutoEncoderFE.load_autoencoder(name='features/model'),
+        index=BynaryLSHIndex(dummy=True, projections=16, tables=2),
         max_missing_streak=6,
         minimun_duration=5,
         max_offset=1)

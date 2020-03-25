@@ -6,6 +6,16 @@ import cv2
 import numpy as np
 
 
+class KeyframeSelector(ABC):
+    @abstractmethod
+    def select_keyframes(self, filename) -> Tuple[np.ndarray, np.ndarray, int]:
+        pass
+
+    @abstractmethod
+    def name(self) -> str:
+        pass
+
+
 def calc_hist(image, bins=(5, 5, 5), grid_size=3, norm=True):
     res = []
     size_x = len(image)
@@ -43,21 +53,11 @@ def normalize(v):
     return v / norm
 
 
-class KeyframeSelector(ABC):
-    @abstractmethod
-    def select_keyframes(self, filename) -> Tuple[np.ndarray, np.ndarray]:
-        pass
-
-    @abstractmethod
-    def name(self) -> str:
-        pass
-
-
-class SimpleKS(KeyframeSelector):
+class FPSReductionKS(KeyframeSelector):
     def __init__(self, n: int = 6):
         self.n = n
 
-    def select_keyframes(self, filename) -> Tuple[np.ndarray, np.ndarray]:
+    def select_keyframes(self, filename) -> Tuple[np.ndarray, np.ndarray, int]:
         video = cv2.VideoCapture(filename)
 
         fps = video.get(cv2.CAP_PROP_FPS)
@@ -67,7 +67,6 @@ class SimpleKS(KeyframeSelector):
         timestamps = []
 
         processed = 0  # actual frame index
-        t0 = time.time()
 
         while video.grab():
             processed += 1
@@ -84,9 +83,8 @@ class SimpleKS(KeyframeSelector):
             timestamps.append(processed / fps)
 
         video.release()
-        print(f'selected {len(frames)} of {processed} frames in {time.time() - t0:.1f} secs')
 
-        return np.array(frames), np.array(timestamps)
+        return np.array(frames), np.array(timestamps), processed
 
     def name(self) -> str:
         return f'simple_{self.n}'
@@ -96,7 +94,7 @@ class MaxHistDiffKS(KeyframeSelector):
     def __init__(self, frames_per_window: int = 2):
         self.frames_per_window = frames_per_window
 
-    def select_keyframes(self, filename) -> Tuple[np.ndarray, np.ndarray]:
+    def select_keyframes(self, filename) -> Tuple[np.ndarray, np.ndarray, int]:
         video = cv2.VideoCapture(filename)
         fps = video.get(cv2.CAP_PROP_FPS)
 
@@ -109,7 +107,6 @@ class MaxHistDiffKS(KeyframeSelector):
         keyframes_index = []
         indexes = set()
 
-        t0 = time.time()
         processed = 0  # actual frame index
 
         run = True
@@ -162,9 +159,7 @@ class MaxHistDiffKS(KeyframeSelector):
         keyframes = [x[0] for x in keyframes_index]
         timestamps = [x[1] / fps for x in keyframes_index]
 
-        print(f'selected {len(keyframes)} of {processed} frames in {time.time() - t0:.1f} secs')
-
-        return np.array(keyframes), np.array(timestamps)
+        return np.array(keyframes), np.array(timestamps), processed
 
     def name(self) -> str:
         return f'window_{self.frames_per_window}'
@@ -174,11 +169,10 @@ class ThresholdHistDiffKS(KeyframeSelector):
     def __init__(self, threshold: float = 1.3):
         self.threshold = threshold
 
-    def select_keyframes(self, filename) -> Tuple[np.ndarray, np.ndarray]:
+    def select_keyframes(self, filename) -> Tuple[np.ndarray, np.ndarray, int]:
         video = cv2.VideoCapture(filename)
         fps = video.get(cv2.CAP_PROP_FPS)
 
-        t0 = time.time()
         processed = 0  # actual frame index
 
         _, frame = video.read()
@@ -208,8 +202,7 @@ class ThresholdHistDiffKS(KeyframeSelector):
                 processed += 1
 
         video.release()
-        print(f'selected {len(keyframes)} of {processed} frames in {time.time() - t0:.1f} secs')
-        return np.array(keyframes), np.array(timestamps)
+        return np.array(keyframes), np.array(timestamps), processed
 
     def name(self) -> str:
         return f'thresh_{self.threshold}'.replace('.', ',')
@@ -235,10 +228,10 @@ if __name__ == '__main__':
     chapter = '../../videos/Shippuden_low/178.mp4'
 
     selector1 = ThresholdHistDiffKS()
-    keyframes1, timestamps1 = selector1.select_keyframes(chapter)
+    keyframes1, timestamps1, _ = selector1.select_keyframes(chapter)
 
     selector2 = MaxHistDiffKS()
-    keyframes2, timestamps2 = selector2.select_keyframes(chapter)
+    keyframes2, timestamps2, _ = selector2.select_keyframes(chapter)
 
     print(len(keyframes1), len(keyframes2))
 

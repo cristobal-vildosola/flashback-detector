@@ -2,7 +2,7 @@ import os
 import re
 import time
 
-import numpy
+import numpy as np
 
 import keyframes.KeyframeSelector as Keyframes
 from features.AutoEncoder import AutoEncoderFE
@@ -12,8 +12,7 @@ from utils.files import get_features_path, get_videos_path, group_features
 
 
 def extract_features_directory(
-        videos_folder: str,
-        selector: Keyframes.KeyframeSelector = Keyframes.SimpleKS(),
+        selector: Keyframes.KeyframeSelector = Keyframes.FPSReductionKS(),
         extractor: FeatureExtractor = ColorLayoutFE(),
         force=False
 ):
@@ -21,24 +20,23 @@ def extract_features_directory(
     Extracts features for the all the videos in the directory and saves them in a new directory obtained using
     get_features_path.
 
-    :param videos_folder: the directory containing the videos.
     :param selector: .
     :param extractor: .
     :param force: when True, calculates features even if it was done previously.
     """
 
     # create directory when necessary
-    feats_path = get_features_path(videos_folder, selector=selector, extractor=extractor)
+    feats_path = get_features_path(selector=selector, extractor=extractor)
     if not os.path.isdir(feats_path):
         os.makedirs(feats_path)
 
-    # create log file
-    log_path = f'{feats_path}/log.txt'
-    if not os.path.isfile(log_path) or force:
-        open(log_path, 'w').close()
+    # create or empty log files
+    if not os.path.isfile(f'{feats_path}/extraction_log.txt') or force:
+        open(f'{feats_path}/extraction_log.txt', 'w').close()
+        open(f'{feats_path}/selection_log.txt', 'w').close()
 
     # obtain all files in the directory
-    videos_path = get_videos_path(videos_folder)
+    videos_path = get_videos_path()
     videos = os.listdir(videos_path)
 
     # extract features from each video
@@ -50,18 +48,17 @@ def extract_features_directory(
 
     # group all features into 2 files (features and tags)
     group_features(
-        videos_folder=videos_folder,
         selector=selector,
         extractor=extractor,
-        force=force)
-
+        force=force
+    )
     return
 
 
 def extract_features(
         file_path: str,
         save_dir: str,
-        selector: Keyframes.KeyframeSelector = Keyframes.SimpleKS(),
+        selector: Keyframes.KeyframeSelector = Keyframes.FPSReductionKS(),
         extractor: FeatureExtractor = ColorLayoutFE(),
         force=False
 ):
@@ -76,69 +73,65 @@ def extract_features(
     """
 
     video_name = re.split('[/.]', file_path)[-2]
-    save_path = f'{save_dir}/{video_name}.npy'
+    save_path_feats = f'{save_dir}/{video_name}-feats'
+    save_path_tags = f'{save_dir}/{video_name}-tags'
 
     # skip already processed videos
-    if not force and os.path.isfile(save_path):
+    if not force and os.path.isfile(save_path_feats) and os.path.isfile(save_path_tags):
         print(f'Skipping video {video_name}')
         return
 
     print(f'Extracting features from video {video_name}')
 
     # obtain keyframes
-    keyframes, timestamps = selector.select_keyframes(file_path)
+    t0 = time.time()
+    keyframes, timestamps, total_frames = selector.select_keyframes(file_path)
+
+    selection = time.time() - t0
+    print(f'selected {len(keyframes)} of {total_frames} frames in {selection:.1f} secs')
+
+    # log selection time
+    log = open(f'{save_dir}/selection_log.txt', 'a')
+    log.write(f'{len(timestamps)}\t{selection:.2f}\n')
+    log.close()
 
     # measure time
     t0 = time.time()
 
-    # extract features and combine with timestamps
+    # extract features and save
     features = extractor.extract_features(keyframes)
-    features = numpy.insert(features, 0, values=timestamps, axis=1)
-    features = features.astype('f4')
+    np.save(save_path_feats, features)
 
-    # save feats
-    numpy.save(save_path, numpy.array(features))
+    # generate tags and save
+    tags = np.empty(timestamps.shape[0], dtype='<U30')
+    for i in range(timestamps.shape[0]):
+        tags[i] = f'{video_name} # {timestamps[i]:.2f} # {i + 1}'
+    np.save(save_path_tags, tags)
 
-    duration = time.time() - t0
-    print(f'feature extraction for {len(timestamps)} frames took {duration:.2f} seconds\n')
+    extraction = time.time() - t0
+    print(f'feature extraction for {len(timestamps)} frames took {extraction:.2f} seconds\n')
 
-    # log time required
-    log = open(f'{save_dir}/log.txt', 'a')
-    log.write(f'{len(timestamps):.0f}\t{duration:.2f}\n')
+    # log extraction time
+    log = open(f'{save_dir}/extraction_log.txt', 'a')
+    log.write(f'{len(timestamps)}\t{extraction:.2f}\n')
     log.close()
     return
 
 
 def main():
-    videos_folder = 'Shippuden_low'
+    selectors = [
+        Keyframes.FPSReductionKS(n=6),
+        Keyframes.MaxHistDiffKS(frames_per_window=2),
+        Keyframes.ThresholdHistDiffKS(threshold=1.3),
+    ]
+    extractors = [
+        ColorLayoutFE(),
+        AutoEncoderFE.load_autoencoder(name='features/model'),
+    ]
 
-    autoencoder = AutoEncoderFE.load_autoencoder(name='features/model')
-    extract_features_directory(
-        videos_folder=videos_folder,
-        selector=Keyframes.SimpleKS(n=6),
-        extractor=autoencoder)
-    extract_features_directory(
-        videos_folder=videos_folder,
-        selector=Keyframes.MaxHistDiffKS(frames_per_window=2),
-        extractor=autoencoder)
-    extract_features_directory(
-        videos_folder=videos_folder,
-        selector=Keyframes.ThresholdHistDiffKS(threshold=1.3),
-        extractor=autoencoder)
-
-    color_layout = ColorLayoutFE(size=8)
-    extract_features_directory(
-        videos_folder=videos_folder,
-        selector=Keyframes.SimpleKS(n=6),
-        extractor=color_layout)
-    extract_features_directory(
-        videos_folder=videos_folder,
-        selector=Keyframes.MaxHistDiffKS(frames_per_window=2),
-        extractor=color_layout)
-    extract_features_directory(
-        videos_folder=videos_folder,
-        selector=Keyframes.ThresholdHistDiffKS(threshold=1.3),
-        extractor=color_layout)
+    for selector in selectors:
+        for extractor in extractors:
+            extract_features_directory(selector=selector, extractor=extractor, force=True)
 
     return
 

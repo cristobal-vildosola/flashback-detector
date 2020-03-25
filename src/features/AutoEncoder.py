@@ -10,71 +10,24 @@ import keyframes.KeyframeSelector as Keyframes
 from features.FeatureExtractor import FeatureExtractor
 
 
-def create_model(
-        input_shape: Tuple[int, int, int] = (256, 256, 3), cells: int = 3, convs: int = 2,
-        kernel_size: int = 3, filters: int = 16, activation: str = 'relu', pool_size: int = 2,
-        output_activation: str = 'sigmoid',
-):
-    conv_args = {
-        'filters': filters,
-        'kernel_size': kernel_size,
-        'activation': activation,
-        'padding': 'same',
-    }
-
-    input_img = Input(shape=input_shape)
-
-    # convolutional encoding
-    pool = input_img
-    for _ in range(cells):
-
-        conv = Conv2D(**conv_args)(pool)
-        for _ in range(1, convs):
-            conv = Conv2D(**conv_args)(conv)
-
-        pool = MaxPooling2D(pool_size=pool_size, padding='same')(conv)
-
-    # flatten encoding
-    encoded = Flatten()(pool)
-
-    # deconvolutional decoding
-    deconv = pool
-    for i in range(cells):
-        up = UpSampling2D(size=pool_size)(deconv)
-
-        deconv = Conv2D(**conv_args)(up)
-        for _ in range(1, convs):
-            deconv = Conv2D(**conv_args)(deconv)
-
-    # return to original number of channels
-    recontruction = Conv2D(
-        filters=input_shape[2],
-        kernel_size=kernel_size,
-        activation=output_activation,
-        padding='same',
-    )(deconv)
-
-    # complete model
-    autoencoder = Model(inputs=input_img, outputs=recontruction)
-    autoencoder.compile(optimizer='adadelta', loss='mean_absolute_error')
-
-    # encoder
-    encoder = Model(inputs=input_img, outputs=encoded)
-
-    return autoencoder, encoder
-
-
 class AutoEncoderFE(FeatureExtractor):
     def __init__(
             self,
-            input_shape: Tuple[int, int, int] = (256, 256, 3), cells: int = 3, convs: int = 2,
-            kern_size: int = 3, filters: int = 16, activation: str = 'relu',
-            pool_size: int = 2, output_activation: str = 'sigmoid',
-            autoencoder=None, encoder=None, model_name: str = 'model',
+            input_shape: Tuple[int, int, int] = (256, 256, 3),
+            cells: int = 3,
+            convs: int = 2,
+            kern_size: int = 3,
+            filters: int = 16,
+            activation: str = 'tanh',
+            pool_size: int = 2,
+            output_activation: str = 'tanh',
+            autoencoder=None,
+            encoder=None,
+            model_name: str = 'model',
     ):
 
         if autoencoder is None and encoder is None:
-            autoencoder, encoder = create_model(
+            self.create_model(
                 input_shape=input_shape, cells=cells, convs=convs,
                 kernel_size=kern_size, filters=filters, activation=activation,
                 pool_size=pool_size, output_activation=output_activation
@@ -84,10 +37,71 @@ class AutoEncoderFE(FeatureExtractor):
         self.encoder = encoder
         self.model_name = model_name
 
-        self.input_shape = self.autoencoder.get_input_shape_at(0)[1:]
-        self.output_size = self.encoder.output_shape[1]
+        try:
+            self.input_shape = self.autoencoder.get_input_shape_at(0)[1:]
+            self.output_size = self.encoder.output_shape[1]
+        except:
+            print('ignoring input/output size')
 
-    def adapt_input(self, data):
+    def create_model(
+            self,
+            input_shape: Tuple[int, int, int] = (256, 256, 3),
+            cells: int = 3,
+            convs: int = 2,
+            kernel_size: int = 3,
+            filters: int = 16,
+            activation: str = 'tanh',
+            pool_size: int = 2,
+            output_activation: str = 'tanh',
+    ):
+        conv_args = {
+            'filters': filters,
+            'kernel_size': kernel_size,
+            'activation': activation,
+            'padding': 'same',
+        }
+
+        input_img = Input(shape=input_shape)
+
+        # convolutional encoding
+        pool = input_img
+        for _ in range(cells):
+
+            conv = Conv2D(**conv_args)(pool)
+            for _ in range(1, convs):
+                conv = Conv2D(**conv_args)(conv)
+
+            pool = MaxPooling2D(pool_size=pool_size, padding='same')(conv)
+
+        # flatten encoding
+        encoded = Flatten()(pool)
+
+        # deconvolutional decoding
+        deconv = pool
+        for i in range(cells):
+            up = UpSampling2D(size=pool_size)(deconv)
+
+            deconv = Conv2D(**conv_args)(up)
+            for _ in range(1, convs):
+                deconv = Conv2D(**conv_args)(deconv)
+
+        # return to original number of channels
+        recontruction = Conv2D(
+            filters=input_shape[2],
+            kernel_size=kernel_size,
+            activation=output_activation,
+            padding='same',
+        )(deconv)
+
+        # complete model
+        self.autoencoder = Model(inputs=input_img, outputs=recontruction)
+        self.autoencoder.compile(optimizer='adadelta', loss='mean_absolute_error')
+
+        # encoder
+        self.encoder = Model(inputs=input_img, outputs=encoded)
+        return
+
+    def adapt_input(self, data) -> numpy.ndarray:
         t0 = time.time()
         new_data = numpy.zeros((len(data), *self.input_shape), dtype='float32')
 
@@ -96,14 +110,21 @@ class AutoEncoderFE(FeatureExtractor):
 
         duration = time.time() - t0
         print(f'resizing {len(data)} frames took {duration:.2f} seconds')
+
         log = open('resizing-log.txt', 'a')
         log.write(f'{len(data):.0f}\t{duration:.2f}\n')
         log.close()
+
         return new_data
 
-    def train(self, data: numpy.ndarray,
-              epochs: int, batch_size: int = 32, validation_split: float = 0.2,
-              verbose: int = 1):
+    def train(
+            self,
+            data: numpy.ndarray,
+            epochs: int,
+            batch_size: int = 32,
+            validation_split: float = 0.2,
+            verbose: bool = True,
+    ):
 
         t = time.time()
         adapted = self.adapt_input(data)
@@ -115,18 +136,18 @@ class AutoEncoderFE(FeatureExtractor):
             batch_size=batch_size,
             verbose=verbose)
 
-        if verbose > 0:
+        if verbose:
             print(f'\nTraining took {time.time() - t:.2f} seconds')
         return
 
-    def encode(self, data: numpy.ndarray):
+    def encode(self, data: numpy.ndarray) -> numpy.ndarray:
         return self.encoder.predict(data)
 
-    def encode_decode(self, data: numpy.ndarray):
+    def encode_decode(self, data: numpy.ndarray) -> numpy.ndarray:
         return self.autoencoder.predict(data)
 
-    def extract_features(self, data):
-        return self.encode(self.adapt_input(data))
+    def extract_features(self, data) -> numpy.ndarray:
+        return (self.encode(self.adapt_input(data)) * 127).astype('int8')
 
     def test(self, data: numpy.ndarray):
         # obtain reconstructed images
@@ -166,12 +187,12 @@ class AutoEncoderFE(FeatureExtractor):
         return f'AE_{self.model_name}'
 
     @staticmethod
-    def load_autoencoder(name: str = 'model'):
+    def load_autoencoder(name: str = 'model') -> 'AutoEncoderFE':
         autoencoder = load_model(f'{name}-autoencoder.h5')
         encoder = load_model(f'{name}-encoder.h5')
 
         # remove / from the name to avoid nested directories
-        name = name.replace('/', '_')
+        name = name.split('/')[-1]
         print(f'model {name} loaded')
         return AutoEncoderFE(autoencoder=autoencoder, encoder=encoder, model_name=name)
 
@@ -184,12 +205,12 @@ def main():
     shape = (64, 64, 3)
 
     # select keyframes and shuffle
-    selector = Keyframes.SimpleKS(n=1)
-    frames, _ = selector.select_keyframes('../../videos/Shippuden_low/003.mp4')
+    selector = Keyframes.FPSReductionKS(n=1)
+    frames, _, _ = selector.select_keyframes('../../videos/Shippuden_low/003.mp4')
     numpy.random.shuffle(frames)
 
     if load:
-        autoencoder = AutoEncoderFE.load_autoencoder()
+        autoencoder = AutoEncoderFE.load_autoencoder(name='model')
         shape = autoencoder.input_shape
         print(f'input size: {shape}')
 
@@ -197,13 +218,10 @@ def main():
         # best: tanh-tanh, second: tanh-relu
         autoencoder = AutoEncoderFE(input_shape=shape, cells=4, convs=2, activation='tanh', output_activation='tanh')
 
-        # autoencoder.train(frames, epochs=50, batch_size=32)
+        # autoencoder.train(frames, epochs=50)
         # autoencoder.save()
 
     print(f'descriptor size: {autoencoder.output_size}')
-
-    for descriptor in autoencoder.extract_features(frames[:30]):
-        print(descriptor)
 
     autoencoder.test(frames[:30])
     return

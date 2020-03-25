@@ -1,5 +1,13 @@
 import cv2
 
+import keyframes.KeyframeSelector as Keyframes
+from features.AutoEncoder import AutoEncoderFE
+from features.ColorLayout import ColorLayoutFE
+from features.FeatureExtractor import FeatureExtractor
+from indexes.LSHIndex import BynaryLSHIndex
+from indexes.SearchIndex import SearchIndex
+from utils.files import get_results_path
+
 
 class Prediccion:
     def __init__(self, video: str, inicio_video: float, capitulo: str, inicio_cap: float, duracion: float):
@@ -79,21 +87,28 @@ def comparar_videos(prediccion: Prediccion):
     return
 
 
-def evaluar_resultados(video: str):
-    carpeta = '../videos/results'
+def evaluar_resultados(
+        video_name: str,
+        selector: Keyframes.KeyframeSelector,
+        extractor: FeatureExtractor,
+        index: SearchIndex,
+):
+    results_path = get_results_path(selector=selector, extractor=extractor, index=index)
 
     predicciones = []
-    with open(f'{carpeta}/{video}.txt') as resultados:
+    with open(f'{results_path}/{video_name}.txt') as resultados:
         for linea in resultados:
-            tiempo_video_inicio, duracion, capitulo, tiempo_cap_inicio = linea.split(' ')
+            tiempo_video_inicio, duracion, capitulo, tiempo_cap_inicio, score = linea.split(' ')
+
             predicciones.append(
-                Prediccion(video, float(tiempo_video_inicio), capitulo, float(tiempo_cap_inicio), float(duracion)))
+                Prediccion(video_name, float(tiempo_video_inicio), capitulo, float(tiempo_cap_inicio), float(duracion))
+            )
 
     correctas = 0
     total = len(predicciones)
 
     tiempo_detectado = 0
-    amv = cv2.VideoCapture(f'../videos/Shippuden_original/{video}.mp4')
+    amv = cv2.VideoCapture(f'../videos/Shippuden_original/{video_name}.mp4')
     tiempo_total = amv.get(cv2.CAP_PROP_FRAME_COUNT) / amv.get(cv2.CAP_PROP_FPS)
 
     for prediccion in predicciones:
@@ -109,4 +124,19 @@ def evaluar_resultados(video: str):
 
 
 if __name__ == '__main__':
-    evaluar_resultados('417')
+    selectors = [
+        Keyframes.FPSReductionKS(n=6),
+        Keyframes.MaxHistDiffKS(frames_per_window=2),
+        Keyframes.ThresholdHistDiffKS(threshold=1.3),
+    ]
+    extractors = [
+        ColorLayoutFE(),
+        AutoEncoderFE.load_autoencoder(name='features/model'),
+    ]
+
+    evaluar_resultados(
+        '417',
+        selector=selectors[2],
+        extractor=extractors[1],
+        index=BynaryLSHIndex(dummy=True, projections=16, tables=2),
+    )

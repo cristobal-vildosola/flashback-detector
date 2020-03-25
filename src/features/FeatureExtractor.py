@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
+import numpy
 
 
 class FeatureExtractor(ABC):
     @abstractmethod
-    def extract_features(self, data):
+    def extract_features(self, data) -> numpy.ndarray:
         pass
 
     @abstractmethod
