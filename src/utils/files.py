@@ -1,5 +1,4 @@
 import os
-import re
 from typing import Tuple
 
 import numpy as np
@@ -107,3 +106,12 @@ def group_features(
     np.save(f'{feats_dir}/{TAGS_FILE}.npy', all_tags)
 
     return all_tags, all_features
+
+
+def log_persistent(text, log_path):
+    if not os.path.isfile(log_path):
+        log = open(log_path, 'w')
+    else:
+        log = open(log_path, 'a')
+    log.write(text)
+    log.close()

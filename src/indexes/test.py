@@ -3,13 +3,13 @@ from nearpy.distances.manhattan import ManhattanDistance
 from nearpy.filters.nearestfilter import NearestFilter
 from nearpy.hashes import RandomDiscretizedProjections
 
-from indexes.OptimizedEngine import OptimizedEngine
+from indexes.HashEngine.HashEngine import HashEngine
 
 if __name__ == '__main__':
     dimension = 192
     vectors = numpy.random.rand(1000000, dimension)
 
-    engine = OptimizedEngine(
+    engine = HashEngine(
         vectors,
         lshashes=[
             RandomDiscretizedProjections('rdp_1', 2, 50),

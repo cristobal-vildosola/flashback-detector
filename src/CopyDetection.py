@@ -6,7 +6,9 @@ import keyframes.KeyframeSelector as Keyframes
 from features.AutoEncoder import AutoEncoderFE
 from features.ColorLayout import ColorLayoutFE
 from features.FeatureExtractor import FeatureExtractor
-from indexes.LSHIndex import BynaryLSHIndex
+from indexes.LSHIndex import LSHIndex
+from indexes.SGHIndex import SGHIndex
+from indexes.FlannIndex import LinearIndex, KDTreeIndex
 from indexes.SearchIndex import SearchIndex
 from utils.files import get_neighbours_path, get_results_path
 
@@ -121,10 +123,12 @@ class Candidate:
         self.duration = max(self.end_time(), cand.end_time()) - min(self.start_time, cand.start_time)
         self.orig_start_time = min(self.orig_start_time, cand.orig_start_time)
         self.start_time = min(self.start_time, cand.start_time)
+
+        # TODO combine scores
         return
 
     def score(self) -> float:
-        if self.found < 3:
+        if self.found < 5:
             return 0
         return self.found / max(1, self.missing - self.missing_streak)
 
@@ -192,6 +196,7 @@ def find_copies(
 
             # check that it's not the current frame for any of the existing candidates
             for copy_a in candidates:
+                # TODO check range
                 if copy_a.video == frame.video and copy_a.index == frame.index:
                     continue
 
@@ -266,13 +271,29 @@ def find_copies(
 
 
 def main():
+    selectors = [
+        Keyframes.FPSReductionKS(n=6),
+        Keyframes.MaxHistDiffKS(frames_per_window=2),
+        Keyframes.ThresholdHistDiffKS(threshold=1.3),
+    ]
+    extractors = [
+        ColorLayoutFE(),
+        AutoEncoderFE(dummy=True, model_name='features/model'),
+    ]
+    indexes = [
+        LinearIndex(dummy=True, k=100),
+        KDTreeIndex(dummy=True, trees=10, k=100),
+        SGHIndex(dummy=True, projections=16),
+        LSHIndex(dummy=True, projections=16),
+    ]
+
     find_copies(
-        video_name='417',
-        selector=Keyframes.ThresholdHistDiffKS(threshold=1.3),
-        extractor=AutoEncoderFE.load_autoencoder(name='features/model'),
-        index=BynaryLSHIndex(dummy=True, projections=16, tables=2),
+        video_name='385',
+        selector=selectors[2],
+        extractor=extractors[0],
+        index=indexes[1],
         max_missing_streak=6,
-        minimun_duration=5,
+        minimun_duration=3,
         max_offset=1)
     return
 

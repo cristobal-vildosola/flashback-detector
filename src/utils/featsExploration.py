@@ -15,7 +15,7 @@ def main():
     ]
     extractors = [
         ColorLayoutFE(),
-        AutoEncoderFE.load_autoencoder(name='../features/model'),
+        AutoEncoderFE.load_autoencoder(model_name='../features/model'),
     ]
 
     for selector in selectors:

@@ -21,27 +21,26 @@ class AutoEncoderFE(FeatureExtractor):
             activation: str = 'tanh',
             pool_size: int = 2,
             output_activation: str = 'tanh',
-            autoencoder=None,
-            encoder=None,
+            autoencoder: Model = None,
+            encoder: Model = None,
             model_name: str = 'model',
+            dummy: bool = False,
     ):
+        if not dummy:
+            if autoencoder is None and encoder is None:
+                self.create_model(
+                    input_shape=input_shape, cells=cells, convs=convs,
+                    kernel_size=kern_size, filters=filters, activation=activation,
+                    pool_size=pool_size, output_activation=output_activation
+                )
 
-        if autoencoder is None and encoder is None:
-            self.create_model(
-                input_shape=input_shape, cells=cells, convs=convs,
-                kernel_size=kern_size, filters=filters, activation=activation,
-                pool_size=pool_size, output_activation=output_activation
-            )
+            self.autoencoder = autoencoder
+            self.encoder = encoder
 
-        self.autoencoder = autoencoder
-        self.encoder = encoder
-        self.model_name = model_name
-
-        try:
             self.input_shape = self.autoencoder.get_input_shape_at(0)[1:]
             self.output_size = self.encoder.output_shape[1]
-        except:
-            print('ignoring input/output size')
+
+        self.model_name = model_name
 
     def create_model(
             self,
@@ -187,14 +186,14 @@ class AutoEncoderFE(FeatureExtractor):
         return f'AE_{self.model_name}'
 
     @staticmethod
-    def load_autoencoder(name: str = 'model') -> 'AutoEncoderFE':
-        autoencoder = load_model(f'{name}-autoencoder.h5')
-        encoder = load_model(f'{name}-encoder.h5')
+    def load_autoencoder(model_name: str = 'model') -> 'AutoEncoderFE':
+        autoencoder = load_model(f'{model_name}-autoencoder.h5')
+        encoder = load_model(f'{model_name}-encoder.h5')
 
         # remove / from the name to avoid nested directories
-        name = name.split('/')[-1]
-        print(f'model {name} loaded')
-        return AutoEncoderFE(autoencoder=autoencoder, encoder=encoder, model_name=name)
+        model_name = model_name.split('/')[-1]
+        print(f'model {model_name} loaded')
+        return AutoEncoderFE(autoencoder=autoencoder, encoder=encoder, model_name=model_name)
 
 
 def main():
@@ -210,7 +209,7 @@ def main():
     numpy.random.shuffle(frames)
 
     if load:
-        autoencoder = AutoEncoderFE.load_autoencoder(name='model')
+        autoencoder = AutoEncoderFE.load_autoencoder(model_name='model')
         shape = autoencoder.input_shape
         print(f'input size: {shape}')
 

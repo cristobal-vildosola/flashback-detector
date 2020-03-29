@@ -1,4 +1,10 @@
-nearpy
 numpy
+scipy
+
+nearpy
 opencv-python
 keras
+tensorflow==2.0.0
+pyflann
+
+matplotlib

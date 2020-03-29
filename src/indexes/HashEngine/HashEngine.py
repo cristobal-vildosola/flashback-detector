@@ -26,17 +26,23 @@ from typing import Tuple, List
 import numpy as np
 from nearpy.engine import Engine
 from nearpy.storage import MemoryStorage
+from nearpy.distances.euclidean import EuclideanDistance
 
 
-class OptimizedEngine(Engine):
+class HashEngine(Engine):
     """
     Optimized engine, stores indexes instead of full vectors in the storage.
-    Has to receive full matrix of vectors at construction.
+    Must receive full matrix of vectors at construction.
     """
 
-    def __init__(self, vectors, labels, lshashes=None, distance=None, fetch_vector_filters=None, vector_filters=None,
-                 verbose=False):
-
+    def __init__(
+            self, vectors, labels,
+            lshashes=None,
+            vector_filters=None,
+            distance=EuclideanDistance(),
+            fetch_vector_filters=None,
+            verbose=False
+    ):
         super().__init__(
             dim=vectors.shape[1],
             lshashes=lshashes,
@@ -44,9 +50,6 @@ class OptimizedEngine(Engine):
             fetch_vector_filters=fetch_vector_filters,
             vector_filters=vector_filters,
             storage=OptimizedMemoryStorage())
-
-        # center data in 0 so that all projections are useful
-        self.means = vectors.mean(axis=0)
 
         self.vectors = vectors
         self.labels = labels
@@ -65,20 +68,17 @@ class OptimizedEngine(Engine):
         The data argument must be JSON-serializable. It is stored with the
         vector and will be returned in search results.
         """
-        centered_vector = self.vectors[v_i] - self.means
         # Store vector in each bucket of all hashes
         for lshash in self.lshashes:
-            for bucket_key in lshash.hash_vector(centered_vector):
+            for bucket_key in lshash.hash_vector(self.vectors[v_i]):
                 # store the vector index instead of the vector itself in the storage
                 self.storage.store_vector(lshash.hash_name, bucket_key, v_i)
 
         return
 
     def delete_vector(self, v_i, v=None):
-        """
-        Deletes vector v_i in all matching buckets in the storage.
-        """
-        centered_vector = self.vectors[v_i] - self.means
+        """ Deletes vector v_i in all matching buckets in the storage. """
+        centered_vector = self.vectors[v_i]
 
         # Delete vector index in each hashes
         for lshash in self.lshashes:
@@ -90,7 +90,7 @@ class OptimizedEngine(Engine):
     def candidate_count(self, vector):
         """ Counts candidates from all buckets from all hashes """
         candidates = 0
-        centered_vector = vector - self.means
+        centered_vector = vector
 
         for lshash in self.lshashes:
             for bucket_key in lshash.hash_vector(centered_vector):
@@ -101,7 +101,7 @@ class OptimizedEngine(Engine):
     def _get_candidates(self, vector) -> List[Tuple[str, np.ndarray]]:
         """ Collect candidates from all buckets from all hashes """
         candidates_indexes = []
-        centered_vector = vector - self.means
+        centered_vector = vector
 
         for lshash in self.lshashes:
             for bucket_key in lshash.hash_vector(centered_vector):
@@ -109,7 +109,6 @@ class OptimizedEngine(Engine):
                 candidates_indexes.extend(bucket_indexes)
 
         # retrieve real vectors from indexes
-        # TODO optimize list construction self.vectors[candidates_indexes]?
         candidates = [(self.vectors[v_i], self.labels[v_i]) for v_i in candidates_indexes]
         return candidates
 
@@ -120,8 +119,10 @@ class OptimizedEngine(Engine):
         return candidates
 
     def analize_storage(self):
-        """ Only for testing purposes.
-        Prints all storage keys and number of vectors in bucket. """
+        """
+        Only for testing purposes.
+        Prints all storage keys and number of vectors in bucket.
+        """
         self.storage.analize_storage()
         return
 
@@ -133,23 +134,19 @@ class OptimizedMemoryStorage(MemoryStorage):
         super().__init__()
 
     def store_vector(self, hash_name, bucket_key, v_i, data=None):
-        """
-        Stores vector and JSON-serializable data in bucket with specified key.
-        """
+        """ Stores vector in bucket with specified key. """
 
         if hash_name not in self.buckets:
             self.buckets[hash_name] = {}
 
         if bucket_key not in self.buckets[hash_name]:
             self.buckets[hash_name][bucket_key] = []
-        self.buckets[hash_name][bucket_key].append(v_i)
 
+        self.buckets[hash_name][bucket_key].append(v_i)
         return
 
     def delete_vector(self, hash_name, bucket_keys, v_i):
-        """
-        Deletes vector and JSON-serializable data in buckets with specified keys.
-        """
+        """ Deletes vector in buckets with specified keys. """
         for key in bucket_keys:
             bucket = self.get_bucket(hash_name, key)
             bucket[:] = [i for i in bucket if i != v_i]
@@ -157,8 +154,10 @@ class OptimizedMemoryStorage(MemoryStorage):
         return
 
     def analize_storage(self):
-        """ Only for testing purposes.
-        Prints all storage keys and number of vectors in bucket. """
+        """
+        Only for testing purposes.
+        Prints all storage keys and number of vectors in bucket.
+        """
 
         bucket_sizes = []
         for table in self.buckets:
@@ -172,7 +171,4 @@ class OptimizedMemoryStorage(MemoryStorage):
               f'\tmean: {mean:.1f}\n'
               f'\tmin: {min(bucket_sizes)}\n')
 
-        import matplotlib.pyplot as plt
-        plt.hist(bucket_sizes, bins=range(0, int(mean * 3) + 1, int(mean / 5)))
-        plt.show()
         return

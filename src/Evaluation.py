@@ -4,90 +4,115 @@ import keyframes.KeyframeSelector as Keyframes
 from features.AutoEncoder import AutoEncoderFE
 from features.ColorLayout import ColorLayoutFE
 from features.FeatureExtractor import FeatureExtractor
-from indexes.LSHIndex import BynaryLSHIndex
+from indexes.LSHIndex import LSHIndex
+from indexes.SGHIndex import SGHIndex
+from indexes.FlannIndex import LinearIndex, KDTreeIndex
 from indexes.SearchIndex import SearchIndex
 from utils.files import get_results_path
 
 
-class Prediccion:
-    def __init__(self, video: str, inicio_video: float, capitulo: str, inicio_cap: float, duracion: float):
+def timestamp(time):
+    return f'{int(time / 60):02}:{int(time % 60):02}'
+
+
+class Duplicate:
+    def __init__(
+            self,
+            video: str,
+            video_start: float,
+            orig_video: str,
+            orig_start: float,
+            duration: float,
+            score: float,
+    ):
         self.video = video
-        self.inicio_video = inicio_video
-        self.duracion = duracion
+        self.video_start = video_start
 
-        self.capitulo = capitulo
-        self.inicio_cap = inicio_cap
+        self.orig_video = orig_video
+        self.orig_start = orig_start
 
-        self.correcta = False
+        self.duration = duration
+        self.score = score
+
+        self.correct = False
+
+    def video_timestamp(self):
+        start = self.video_start
+        end = self.video_start + self.duration
+        return f'{self.video} {timestamp(start)}-{timestamp(end)}'
+
+    def original_timestamp(self):
+        start = self.orig_start
+        end = self.orig_start + self.duration
+        return f'{self.orig_video} {timestamp(start)}-{timestamp(end)}'
 
 
-def comparar_videos(prediccion: Prediccion):
-    amv = cv2.VideoCapture(f'../videos/Shippuden_original/{prediccion.video}.mp4')
-    cap = cv2.VideoCapture(f'../videos/Shippuden_original/{prediccion.capitulo}.mp4')
+def compare_videos(duplicate: Duplicate):
+    video = cv2.VideoCapture(f'../videos/Shippuden_original/{duplicate.video}.mp4')
+    orig_video = cv2.VideoCapture(f'../videos/Shippuden_original/{duplicate.orig_video}.mp4')
 
-    text = f'{int(prediccion.inicio_video / 60)}:{int(prediccion.inicio_video) % 60} ({prediccion.duracion:.1f}) ' + \
-           f'capitulo {prediccion.capitulo} - {int(prediccion.inicio_cap / 60)}:{int(prediccion.inicio_cap) % 60}'
+    text = f'{duplicate.video_timestamp()} -> {duplicate.original_timestamp()} ({duplicate.score:.1f})'
     font = cv2.FONT_HERSHEY_COMPLEX
     scale = 1
-    thick = 3
-    width, heigth = cv2.getTextSize(text, font, scale, thick)[0]
+    thickness = 3
+    width, heigth = cv2.getTextSize(text, font, scale, thickness)[0]
 
     # mover videos a puntos de inicio
-    amv.set(cv2.CAP_PROP_POS_MSEC, prediccion.inicio_video * 1000)
-    cap.set(cv2.CAP_PROP_POS_MSEC, prediccion.inicio_cap * 1000)
+    video.set(cv2.CAP_PROP_POS_MSEC, duplicate.video_start * 1000)
+    orig_video.set(cv2.CAP_PROP_POS_MSEC, duplicate.orig_start * 1000)
 
     # variables para reproducir videos con fps distintos
-    tiempo = 0
-    fps1 = amv.get(cv2.CAP_PROP_FPS)
-    fps2 = cap.get(cv2.CAP_PROP_FPS)
-    tiempo_frame1 = 1.0 / fps1
-    tiempo_frame2 = 1.0 / fps2
-    siguiente_frame1 = tiempo_frame1
-    siguiente_frame2 = tiempo_frame2
+    time = 0
+    fps_1 = video.get(cv2.CAP_PROP_FPS)
+    fps_2 = orig_video.get(cv2.CAP_PROP_FPS)
+    frame_duration_1 = 1.0 / fps_1
+    frame_duration_2 = 1.0 / fps_2
+    next_frame_1 = frame_duration_1
+    next_frame_2 = frame_duration_2
 
     # frames iniciales
-    _, frame1 = amv.read()
-    _, frame2 = cap.read()
+    _, frame1 = video.read()
+    _, frame2 = orig_video.read()
     frame1 = cv2.resize(frame1, (640, 358))
     frame2 = cv2.resize(frame2, (640, 358))
 
-    while tiempo < prediccion.duracion and amv.isOpened() and cap.isOpened():
+    while time < duplicate.duration and video.isOpened() and orig_video.isOpened():
 
         # avanzar el frame solo cuando pase 1 fps_1 o más
-        if tiempo > siguiente_frame1:
-            siguiente_frame1 += tiempo_frame1
-            _, frame1 = amv.read()
+        if time > next_frame_1:
+            next_frame_1 += frame_duration_1
+            _, frame1 = video.read()
             frame1 = cv2.resize(frame1, (640, 358))
 
         # avanzar el frame solo cuando pase 1 fps_2 o más
-        if tiempo > siguiente_frame2:
-            siguiente_frame2 += tiempo_frame2
-            _, frame2 = cap.read()
+        if time > next_frame_2:
+            next_frame_2 += frame_duration_2
+            _, frame2 = orig_video.read()
             frame2 = cv2.resize(frame2, (640, 358))
 
         # concatenar frames y agregar texto
         img = cv2.hconcat([frame1, frame2])
-        cv2.putText(img, text, (int(640 - width / 2), heigth), font, scale, (255, 255, 255), thickness=thick)
-        cv2.imshow(f'resultados {prediccion.video}', img)
+        cv2.putText(img, text, (int(640 - width / 2), heigth), font, scale, (255, 255, 255), thickness=thickness)
+        cv2.imshow(f'resultados {duplicate.video}', img)
 
         # espera de tiempo
-        tiempo += 0.02
+        time += 0.02
         res = cv2.waitKey(20)
 
         # permitir terminar de manera temprana
         if res & 0xff == ord('y'):
-            prediccion.correcta = True
+            duplicate.correct = True
             return
 
         elif res & 0xff == ord('n'):
             return
 
     res = cv2.waitKey(0)
-    prediccion.correcta = res & 0xff == ord('y')
+    duplicate.correct = res & 0xff == ord('y')
     return
 
 
-def evaluar_resultados(
+def evaluate_duplicates(
         video_name: str,
         selector: Keyframes.KeyframeSelector,
         extractor: FeatureExtractor,
@@ -95,35 +120,36 @@ def evaluar_resultados(
 ):
     results_path = get_results_path(selector=selector, extractor=extractor, index=index)
 
-    predicciones = []
+    duplicates = []
     with open(f'{results_path}/{video_name}.txt') as resultados:
         for linea in resultados:
-            tiempo_video_inicio, duracion, capitulo, tiempo_cap_inicio, score = linea.split(' ')
+            video_start, duration, orig_video, orig_start, score = linea.split(' ')
 
-            predicciones.append(
-                Prediccion(video_name, float(tiempo_video_inicio), capitulo, float(tiempo_cap_inicio), float(duracion))
+            duplicates.append(
+                Duplicate(
+                    video=video_name,
+                    video_start=float(video_start),
+                    orig_video=orig_video,
+                    orig_start=float(orig_start),
+                    duration=float(duration),
+                    score=float(score),
+                )
             )
 
-    correctas = 0
-    total = len(predicciones)
+    correct = 0
+    total = len(duplicates)
 
-    tiempo_detectado = 0
-    amv = cv2.VideoCapture(f'../videos/Shippuden_original/{video_name}.mp4')
-    tiempo_total = amv.get(cv2.CAP_PROP_FRAME_COUNT) / amv.get(cv2.CAP_PROP_FPS)
+    for prediccion in duplicates:
+        compare_videos(prediccion)
 
-    for prediccion in predicciones:
-        comparar_videos(prediccion)
+        if prediccion.correct:
+            correct += 1
 
-        if prediccion.correcta:
-            correctas += 1
-            tiempo_detectado += prediccion.duracion
-
-    print(f'aciertos: {correctas / total * 100:.1f}%')
-    print(f'tiempo detectado: {tiempo_detectado / tiempo_total * 100:.1f}%')
+    print(f'aciertos: {correct / total * 100:.1f}%')
     return
 
 
-if __name__ == '__main__':
+def main():
     selectors = [
         Keyframes.FPSReductionKS(n=6),
         Keyframes.MaxHistDiffKS(frames_per_window=2),
@@ -131,12 +157,23 @@ if __name__ == '__main__':
     ]
     extractors = [
         ColorLayoutFE(),
-        AutoEncoderFE.load_autoencoder(name='features/model'),
+        AutoEncoderFE(dummy=True, model_name='features/model'),
+    ]
+    indexes = [
+        LinearIndex(dummy=True, k=100),
+        KDTreeIndex(dummy=True, trees=10, k=100),
+        SGHIndex(dummy=True, projections=16),
+        LSHIndex(dummy=True, projections=16),
     ]
 
-    evaluar_resultados(
-        '417',
+    evaluate_duplicates(
+        '385',
         selector=selectors[2],
-        extractor=extractors[1],
-        index=BynaryLSHIndex(dummy=True, projections=16, tables=2),
+        extractor=extractors[0],
+        index=indexes[1],
     )
+    return
+
+
+if __name__ == '__main__':
+    main()
