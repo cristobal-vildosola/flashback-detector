@@ -22,21 +22,13 @@ class ColorLayoutFE(FeatureExtractor):
         return f'CL'
 
 
-zigzag_scan = [
-    0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5,
-    12, 19, 26, 33, 40, 48, 41, 34, 27, 20, 13, 6, 7, 14, 21, 28,
-    35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51,
-    58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63,
-]
-
-
 def color_layout_descriptor(img: np.ndarray):
     """
     extracts the Color Layout descriptor for the given image
 
     :param img: the image to process
     """
-    # resize to desired size and transform color
+    # resize to desired size and convert color
     resized = cv2.resize(img, dsize=(8, 8), interpolation=cv2.INTER_AREA)
     y, cr, cb = cv2.split(cv2.cvtColor(np.array(resized, dtype=np.uint8), cv2.COLOR_BGR2YCR_CB))
 
@@ -46,72 +38,50 @@ def color_layout_descriptor(img: np.ndarray):
     dct_cr = cv2.dct(np.float32(cr)).flatten()
 
     # traverse diagonally and quantize
-    dct_y[0] = quant_ydc(dct_y[0]) >> 1
-    dct_cb[0] = quant_cdc(dct_cb[0] / 8)
-    dct_cr[0] = quant_cdc(dct_cr[0] / 8)
+    quant_dct_y = np.zeros(64, dtype='int8')
+    quant_dct_cb = np.zeros(64, dtype='int8')
+    quant_dct_cr = np.zeros(64, dtype='int8')
     for i in range(64):
-        dct_y[i] = quant_ac(dct_y[zigzag_scan[i]] / 2) >> 3
-        dct_cb[i] = quant_ac(dct_cb[zigzag_scan[i]]) >> 3
-        dct_cr[i] = quant_ac(dct_cr[zigzag_scan[i]]) >> 3
+        zigzag_i = zigzag_scan[i]
+        quant_dct_y[i] = round(dct_y[zigzag_i] / quant_y[zigzag_i])
+        quant_dct_cb[i] = round(dct_cb[zigzag_i] / quant_cr[zigzag_i])
+        quant_dct_cr[i] = round(dct_cr[zigzag_i] / quant_cr[zigzag_i])
 
-    return np.concatenate([dct_y, dct_cb, dct_cr]).astype('int8')
-
-
-def quant_ydc(i):
-    i = int(i)
-    if i > 192:
-        j = 112 + (i - 192) >> 2
-    elif i > 160:
-        j = 96 + (i - 160) >> 1
-    elif i > 96:
-        j = 32 + (i - 96)
-    elif i > 64:
-        j = 16 + (i - 64) >> 1
-    else:
-        j = i >> 2
-
-    return int(j)
+    return np.concatenate([quant_dct_y, quant_dct_cb, quant_dct_cr]).astype('int8')
 
 
-def quant_cdc(i):
-    i = int(i)
-    j = 0
-    if i > 191:
-        j = 63
-    elif i > 160:
-        j = 56 + (i - 160) >> 2
-    elif i > 143:
-        j = 48 + (i - 144) >> 1
-    elif i > 111:
-        j = 16 + (i - 112)
-    elif i > 95:
-        j = 8 + (i - 96) >> 1
-    elif i > 63:
-        j = (i - 64) >> 2
+zigzag_scan = [
+    0, 1, 8, 16, 9, 2, 3, 10,
+    17, 24, 32, 25, 18, 11, 4, 5,
+    12, 19, 26, 33, 40, 48, 41, 34,
+    27, 20, 13, 6, 7, 14, 21, 28,
+    35, 42, 49, 56, 57, 50, 43, 36,
+    29, 22, 15, 23, 30, 37, 44, 51,
+    58, 59, 52, 45, 38, 31, 39, 46,
+    53, 60, 61, 54, 47, 55, 62, 63,
+]
 
-    return int(j)
+quant_y = [
+    16, 11, 10, 16, 24, 40, 51, 61,
+    12, 12, 14, 19, 26, 58, 60, 55,
+    14, 13, 16, 24, 40, 57, 69, 56,
+    14, 17, 22, 29, 51, 87, 80, 62,
+    18, 22, 37, 56, 68, 109, 103, 77,
+    24, 35, 55, 64, 81, 104, 113, 92,
+    49, 64, 78, 87, 103, 121, 120, 101,
+    72, 92, 95, 98, 112, 100, 103, 99,
+]
 
-
-def quant_ac(i):
-    i = int(i)
-    if i > 255:
-        i = 255
-    if i < -255:
-        i = -256
-
-    if abs(i) > 127:
-        j = 64 + abs(i) >> 2
-    elif abs(i) > 63:
-        j = 32 + abs(i) >> 1
-    else:
-        j = abs(i)
-
-    if i < 0:
-        j = -j
-
-    j += 128
-    return int(j)
-
+quant_cr = [
+    17, 18, 24, 47, 99, 99, 99, 99,
+    18, 21, 26, 66, 99, 99, 99, 99,
+    24, 26, 56, 99, 99, 99, 99, 99,
+    47, 66, 99, 99, 99, 99, 99, 99,
+    99, 99, 99, 99, 99, 99, 99, 99,
+    99, 99, 99, 99, 99, 99, 99, 99,
+    99, 99, 99, 99, 99, 99, 99, 99,
+    99, 99, 99, 99, 99, 99, 99, 99,
+]
 
 if __name__ == '__main__':
     image = cv2.imread('../utils/ejemplo.png')

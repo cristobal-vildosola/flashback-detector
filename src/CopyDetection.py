@@ -2,14 +2,9 @@ import os
 import time
 from typing import List
 
-import keyframes.KeyframeSelector as Keyframes
-from features.AutoEncoder import AutoEncoderFE
-from features.ColorLayout import ColorLayoutFE
-from features.FeatureExtractor import FeatureExtractor
-from indexes.LSHIndex import LSHIndex
-from indexes.SGHIndex import SGHIndex
-from indexes.FlannIndex import LinearIndex, KDTreeIndex
-from indexes.SearchIndex import SearchIndex
+from features import AutoEncoderFE, ColorLayoutFE, FeatureExtractor
+from indexes import LSHIndex, SGHIndex, LinearIndex, KDTreeIndex, SearchIndex
+from keyframes import KeyframeSelector, MaxHistDiffKS, FPSReductionKS
 from utils.files import get_neighbours_path, get_results_path
 
 
@@ -98,31 +93,31 @@ class Candidate:
     def end_time(self) -> float:
         return self.start_time + self.duration
 
-    def overlapped(self, cand: 'Candidate'):
-        if self.orig_start_time <= cand.orig_start_time < self.orig_end_time() or \
-                cand.orig_start_time <= self.orig_start_time < cand.orig_end_time():
+    def overlapped(self, other: 'Candidate'):
+        if self.orig_start_time <= other.orig_start_time < self.orig_end_time() or \
+                other.orig_start_time <= self.orig_start_time < other.orig_end_time():
             return True
 
         return False
 
-    def combine(self, cand: 'Candidate', max_offset: float):
-        if self.orig_start_time <= cand.orig_start_time and \
-                self.orig_end_time() >= cand.orig_end_time():
+    def combine(self, other: 'Candidate', max_offset: float):
+        if self.orig_start_time <= other.orig_start_time and \
+                self.orig_end_time() >= other.orig_end_time():
             return
 
-        if cand.orig_start_time <= self.orig_start_time and \
-                cand.orig_end_time() >= self.orig_end_time():
+        if other.orig_start_time <= self.orig_start_time and \
+                other.orig_end_time() >= self.orig_end_time():
             return
 
-        offset = abs((self.orig_start_time - cand.orig_start_time) -
-                     (self.start_time - cand.start_time))
+        offset = abs((self.orig_start_time - other.orig_start_time) -
+                     (self.start_time - other.start_time))
 
         if offset > max_offset:
             return
 
-        self.duration = max(self.end_time(), cand.end_time()) - min(self.start_time, cand.start_time)
-        self.orig_start_time = min(self.orig_start_time, cand.orig_start_time)
-        self.start_time = min(self.start_time, cand.start_time)
+        self.duration = max(self.end_time(), other.end_time()) - min(self.start_time, other.start_time)
+        self.orig_start_time = min(self.orig_start_time, other.orig_start_time)
+        self.start_time = min(self.start_time, other.start_time)
 
         # TODO combine scores
         return
@@ -138,7 +133,7 @@ class Candidate:
 
 def find_copies(
         video_name: str,
-        selector: Keyframes.KeyframeSelector,
+        selector: KeyframeSelector,
         extractor: FeatureExtractor,
         index: SearchIndex,
         max_missing_streak: int = 7,
@@ -272,9 +267,8 @@ def find_copies(
 
 def main():
     selectors = [
-        Keyframes.FPSReductionKS(n=6),
-        Keyframes.MaxHistDiffKS(frames_per_window=2),
-        Keyframes.ThresholdHistDiffKS(threshold=1.3),
+        FPSReductionKS(n=6),
+        MaxHistDiffKS(frames_per_window=2),
     ]
     extractors = [
         ColorLayoutFE(),
