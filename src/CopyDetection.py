@@ -2,14 +2,9 @@ import os
 import time
 from typing import List
 
-import keyframes.KeyframeSelector as Keyframes
-from features.AutoEncoder import AutoEncoderFE
-from features.ColorLayout import ColorLayoutFE
-from features.FeatureExtractor import FeatureExtractor
-from indexes.LSHIndex import LSHIndex
-from indexes.SGHIndex import SGHIndex
-from indexes.FlannIndex import LinearIndex, KDTreeIndex
-from indexes.SearchIndex import SearchIndex
+from features import AutoEncoderFE, ColorLayoutFE, FeatureExtractor
+from indexes import LSHIndex, SGHIndex, LinearIndex, KDTreeIndex, SearchIndex
+from keyframes import KeyframeSelector, MaxHistDiffKS, FPSReductionKS
 from utils.files import get_neighbours_path, get_results_path
 
 
@@ -138,7 +133,7 @@ class Candidate:
 
 def find_copies(
         video_name: str,
-        selector: Keyframes.KeyframeSelector,
+        selector: KeyframeSelector,
         extractor: FeatureExtractor,
         index: SearchIndex,
         max_missing_streak: int = 7,
@@ -272,9 +267,8 @@ def find_copies(
 
 def main():
     selectors = [
-        Keyframes.FPSReductionKS(n=6),
-        Keyframes.MaxHistDiffKS(frames_per_window=2),
-        Keyframes.ThresholdHistDiffKS(threshold=1.3),
+        FPSReductionKS(n=6),
+        MaxHistDiffKS(frames_per_window=2),
     ]
     extractors = [
         ColorLayoutFE(),

@@ -4,23 +4,19 @@ import time
 
 import numpy as np
 
-import keyframes.KeyframeSelector as Keyframes
-from features.AutoEncoder import AutoEncoderFE
-from features.ColorLayout import ColorLayoutFE
-from features.FeatureExtractor import FeatureExtractor
-from indexes.LSHIndex import LSHIndex
-from indexes.SGHIndex import SGHIndex
-from indexes.FlannIndex import LinearIndex, KDTreeIndex
-from indexes.SearchIndex import SearchIndex
+from features import AutoEncoderFE, ColorLayoutFE, FeatureExtractor
+from indexes import LSHIndex, SGHIndex, LinearIndex, KDTreeIndex, SearchIndex
+from keyframes import KeyframeSelector, MaxHistDiffKS, FPSReductionKS
 from utils.files import read_features, group_features, get_features_path, get_neighbours_path, log_persistent
 
 
 def nearest_neighbours(
         video_name: str,
-        selector: Keyframes.KeyframeSelector,
+        selector: KeyframeSelector,
         extractor: FeatureExtractor,
         index: SearchIndex,
         analize: bool = False,
+        force: bool = False,
 ):
     """
     Searches the nearest neighbours for all the frames in a given video and saves them in a corresponding dir.
@@ -30,11 +26,12 @@ def nearest_neighbours(
     :param extractor: the feature extractor used during feature extraction.
     :param index: the search index to use.
     :param analize: whether to analize candidate count or not.
+    :param force: whether to force search or not.
     """
 
     neighbours_dir = get_neighbours_path(selector=selector, extractor=extractor, index=index)
     neighbours_path = f'{neighbours_dir}/{video_name}.txt'
-    if os.path.isfile(neighbours_path):
+    if os.path.isfile(neighbours_path) and not force:
         print(f'skipping video {video_name}, already calculated with index {index.name()}')
         return
 
@@ -86,20 +83,19 @@ def nearest_neighbours(
 
 def main():
     np.random.seed(1209)
-    videos = ['385']  # ['119-120', '417', '143', '215']
+    videos = ['119-120', '417', '143', '215', '385']
     k = 100
 
     selectors = [
-        Keyframes.FPSReductionKS(n=6),
-        Keyframes.MaxHistDiffKS(frames_per_window=2),
-        Keyframes.ThresholdHistDiffKS(threshold=1.3),
+        FPSReductionKS(n=3),
+        MaxHistDiffKS(frames_per_window=2),
     ]
     extractors = [
         ColorLayoutFE(),
         AutoEncoderFE(dummy=True, model_name='features/model'),
     ]
     indexes = [
-        [LinearIndex, {}],
+        # [LinearIndex, {}],
         [KDTreeIndex, {'trees': 10, 'checks': 1000}],
         [SGHIndex, {'projections': 16}],
         [LSHIndex, {'projections': 16}],
@@ -126,11 +122,7 @@ def main():
                 # index.engine.analize_storage()
 
                 for video_name in videos:
-                    nearest_neighbours(
-                        video_name=video_name,
-                        selector=selector,
-                        extractor=extractor,
-                        index=index)
+                    nearest_neighbours(video_name=video_name, selector=selector, extractor=extractor, index=index)
     return
 
 

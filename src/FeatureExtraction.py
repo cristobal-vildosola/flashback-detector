@@ -4,16 +4,14 @@ import time
 
 import numpy as np
 
-import keyframes.KeyframeSelector as Keyframes
-from features.AutoEncoder import AutoEncoderFE
-from features.ColorLayout import ColorLayoutFE
-from features.FeatureExtractor import FeatureExtractor
+from features import AutoEncoderFE, ColorLayoutFE, FeatureExtractor
+from keyframes import KeyframeSelector, MaxHistDiffKS, FPSReductionKS
 from utils.files import get_features_path, get_videos_path, group_features
 
 
 def extract_features_directory(
-        selector: Keyframes.KeyframeSelector = Keyframes.FPSReductionKS(),
-        extractor: FeatureExtractor = ColorLayoutFE(),
+        selector: KeyframeSelector,
+        extractor: FeatureExtractor,
         force=False
 ):
     """
@@ -58,8 +56,8 @@ def extract_features_directory(
 def extract_features(
         file_path: str,
         save_dir: str,
-        selector: Keyframes.KeyframeSelector = Keyframes.FPSReductionKS(),
-        extractor: FeatureExtractor = ColorLayoutFE(),
+        selector: KeyframeSelector,
+        extractor: FeatureExtractor,
         force=False
 ):
     """
@@ -120,9 +118,8 @@ def extract_features(
 
 def main():
     selectors = [
-        Keyframes.FPSReductionKS(n=6),
-        Keyframes.MaxHistDiffKS(frames_per_window=2),
-        Keyframes.ThresholdHistDiffKS(threshold=1.3),
+        FPSReductionKS(n=3),
+        MaxHistDiffKS(frames_per_window=2),
     ]
     extractors = [
         ColorLayoutFE(),
