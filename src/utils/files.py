@@ -3,8 +3,9 @@ from typing import Tuple
 
 import numpy as np
 
-import keyframes.KeyframeSelector as Keyframes
-from features.FeatureExtractor import FeatureExtractor
+from features import FeatureExtractor
+from indexes import SearchIndex
+from keyframes import KeyframeSelector
 
 project_root = 'C:/Users/Cristobal/Documents/U/TrabajoTitulo/proyectoTitulo'
 
@@ -21,22 +22,19 @@ def get_videos_path():
     return f'{VIDEOS_DIR}'
 
 
-def get_features_path(selector, extractor):
+def get_features_path(selector: KeyframeSelector, extractor: FeatureExtractor):
     return f'{FEATURES_DIR}/{selector.name()}_{extractor.name()}'
 
 
-def get_neighbours_path(selector, extractor, index):
+def get_neighbours_path(selector: KeyframeSelector, extractor: FeatureExtractor, index: SearchIndex):
     return f'{NEIGHBOURS_DIR}/{selector.name()}_{extractor.name()}_{index.name()}'
 
 
-def get_results_path(selector, extractor, index):
+def get_results_path(selector: KeyframeSelector, extractor: FeatureExtractor, index: SearchIndex):
     return f'{RESULTS_DIR}/{selector.name()}_{extractor.name()}_{index.name()}'
 
 
-def read_features(
-        video_name: str,
-        directory: str,
-) -> Tuple[np.ndarray, np.ndarray]:
+def read_features(video_name: str, directory: str) -> Tuple[np.ndarray, np.ndarray]:
     """
     reads the data for a given video and returns the features and tags separated in 2 numpy arrays.
 
@@ -55,7 +53,7 @@ def read_features(
 
 
 def group_features(
-        selector: Keyframes.KeyframeSelector,
+        selector: KeyframeSelector,
         extractor: FeatureExtractor,
         force: bool = False
 ) -> Tuple[np.ndarray, np.ndarray]:
@@ -108,7 +106,7 @@ def group_features(
     return all_tags, all_features
 
 
-def log_persistent(text, log_path):
+def log_persistent(text: str, log_path: str):
     if not os.path.isfile(log_path):
         log = open(log_path, 'w')
     else:

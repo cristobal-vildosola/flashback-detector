@@ -119,8 +119,6 @@ def main():
                 log_path = f'{neighbours_path}/constructions.txt'
                 log_persistent(f'{index.name()}\t{index.build_time:.2f}\t{all_features.shape[0]}\n', log_path=log_path)
 
-                # index.engine.analize_storage()
-
                 for video_name in videos:
                     nearest_neighbours(video_name=video_name, selector=selector, extractor=extractor, index=index)
     return
