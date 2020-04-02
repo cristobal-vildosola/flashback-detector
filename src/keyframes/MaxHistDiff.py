@@ -107,10 +107,6 @@ def cityblock_dist(hist1, hist2):
     return np.linalg.norm(hist1 - hist2, ord=1)
 
 
-def euclidean_dist(hist1, hist2):
-    return np.linalg.norm(hist1 - hist2)
-
-
 def normalize(v):
     norm = np.linalg.norm(v)
     if norm == 0:

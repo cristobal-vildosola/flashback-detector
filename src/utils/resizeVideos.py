@@ -1,6 +1,8 @@
 import os
 import time
 
+import cv2
+
 
 def resize_video(file, output, size):
     t0 = time.time()
@@ -9,7 +11,7 @@ def resize_video(file, output, size):
     return
 
 
-def resize_videos(folder='../../videos/Shippuden', output_folder='../../videos/resized', size=(100, 100)):
+def resize_videos(folder='../../videos/Shippuden_original', output_folder='../../videos/resized', size=(100, 100)):
     # create folder
     if not os.path.isdir(output_folder):
         os.mkdir(output_folder)
@@ -23,5 +25,18 @@ def resize_videos(folder='../../videos/Shippuden', output_folder='../../videos/r
     return
 
 
+def count_frames(folder='../../videos/Shippuden_low'):
+    frames = 0
+    videos = os.listdir(folder)
+    for video in videos:
+        if video.endswith('.mp4'):
+            video = cv2.VideoCapture(f'{folder}/{video}')
+            frames += video.get(cv2.CAP_PROP_FRAME_COUNT)
+            video.release()
+
+    return frames
+
+
 if __name__ == '__main__':
-    resize_videos()
+    print(f'{count_frames():.0f}')
+    # resize_videos()

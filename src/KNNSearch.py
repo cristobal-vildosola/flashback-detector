@@ -32,7 +32,7 @@ def nearest_neighbours(
     neighbours_dir = get_neighbours_path(selector=selector, extractor=extractor, index=index)
     neighbours_path = f'{neighbours_dir}/{video_name}.txt'
     if os.path.isfile(neighbours_path) and not force:
-        print(f'skipping video {video_name}, already calculated with index {index.name()}')
+        print(f'skipping video {video_name}, already searched with index {index.name()}')
         return
 
     # read target video features
@@ -48,10 +48,11 @@ def nearest_neighbours(
         print(f'\ncandidates stats:\n'
               f'\tmax: {max(candidates_num)}\n'
               f'\tmean: {np.mean(candidates_num):.1f}\n'
+              f'\tmedian: {np.median(candidates_num):.1f}\n'
               f'\tmin: {min(candidates_num)}\n')
 
-        if input('continue? (y/n)') != 'y':
-            return
+        # if input('continue? (y/n) ').lower().strip() != 'y':
+        #    return
 
     # open log
     neighbours_file = open(neighbours_path, 'w')
@@ -83,22 +84,22 @@ def nearest_neighbours(
 
 def main():
     np.random.seed(1209)
-    videos = ['119-120', '417', '143', '215', '385', '178']
+    videos = ['417', '143', '215', '385', '178', '119-120', ]
     k = 100
 
     selectors = [
+        MaxHistDiffKS(frames_per_window=1),
         FPSReductionKS(n=3),
-        MaxHistDiffKS(frames_per_window=2),
     ]
     extractors = [
         ColorLayoutFE(),
-        AutoEncoderFE(dummy=True, model_name='features/model'),
+        AutoEncoderFE.load_autoencoder(model_name='features/model'),
     ]
     indexes = [
-        # [LinearIndex, {}],
-        [KDTreeIndex, {'trees': 10, 'checks': 1000}],
-        [SGHIndex, {'projections': 16}],
-        [LSHIndex, {'projections': 16}],
+        [LinearIndex, {}],
+        [KDTreeIndex, {'trees': 5, 'checks': 1000}],
+        [LSHIndex, {'projections': 16, 'tables': 2}],
+        [SGHIndex, {'projections': 14}],
     ]
 
     for selector in selectors:
@@ -112,6 +113,11 @@ def main():
                 index = index_class(data=all_features, labels=all_tags, k=k, **kwargs)
                 print(f'{index.name()} construction took {index.build_time:.1f} seconds\n')
 
+                try:
+                    index.engine.analize_storage()
+                except:
+                    pass
+
                 neighbours_path = get_neighbours_path(selector=selector, extractor=extractor, index=index)
                 if not os.path.isdir(neighbours_path):
                     os.makedirs(neighbours_path)
@@ -120,7 +126,8 @@ def main():
                 log_persistent(f'{index.name()}\t{index.build_time:.2f}\t{all_features.shape[0]}\n', log_path=log_path)
 
                 for video_name in videos:
-                    nearest_neighbours(video_name=video_name, selector=selector, extractor=extractor, index=index)
+                    nearest_neighbours(video_name=video_name, selector=selector, extractor=extractor, index=index,
+                                       analize=True)
     return
 
 

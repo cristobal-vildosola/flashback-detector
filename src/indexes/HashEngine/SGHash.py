@@ -7,7 +7,7 @@ from nearpy.hashes import LSHash
 
 class SGHash(LSHash):
 
-    def __init__(self, name: str, training_data: np.ndarray, projections: int, num_bases: int = 300):
+    def __init__(self, name: str, training_data: np.ndarray, projections: int, num_bases: int):
         super().__init__(hash_name=name)
 
         self.dim = training_data.shape[1]

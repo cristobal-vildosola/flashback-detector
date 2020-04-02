@@ -118,7 +118,7 @@ def evaluate_duplicates(
     duplicates = []
     with open(f'{results_path}/{video_name}.txt') as resultados:
         for linea in resultados:
-            video_start, duration, orig_video, orig_start, score = linea.split(' ')
+            video_start, orig_video, orig_start, duration, score = linea.split(' ')
 
             duplicates.append(
                 Duplicate(
@@ -140,32 +140,40 @@ def evaluate_duplicates(
         if prediccion.correct:
             correct += 1
 
-    print(f'aciertos: {correct / total * 100:.1f}%')
+    print(f'precission: {correct / total * 100:.1f}%')
     return
 
 
 def main():
+    videos = ['417', '143', '215', '385', '178', '119-120', ]
+
     selectors = [
-        FPSReductionKS(n=6),
-        MaxHistDiffKS(frames_per_window=2),
+        FPSReductionKS(n=3),
+        MaxHistDiffKS(frames_per_window=1),
     ]
     extractors = [
         ColorLayoutFE(),
-        AutoEncoderFE(dummy=True, model_name='features/model'),
-    ]
-    indexes = [
-        LinearIndex(dummy=True, k=100),
-        KDTreeIndex(dummy=True, trees=10, k=100),
-        SGHIndex(dummy=True, projections=16),
-        LSHIndex(dummy=True, projections=16),
+        AutoEncoderFE(dummy=True, model_name='model'),
     ]
 
-    evaluate_duplicates(
-        '385',
-        selector=selectors[2],
-        extractor=extractors[0],
-        index=indexes[1],
-    )
+    k = 100
+    indexes = [
+        LinearIndex(dummy=True, k=k),
+        KDTreeIndex(dummy=True, trees=5, k=k),
+        SGHIndex(dummy=True, projections=14, k=k),
+        LSHIndex(dummy=True, projections=16, tables=2, k=k),
+    ]
+
+    for video in videos:
+        for selector in selectors:
+            for extractor in extractors:
+                for index in indexes:
+                    evaluate_duplicates(
+                        video_name=video,
+                        selector=selector,
+                        extractor=extractor,
+                        index=index,
+                    )
     return
 
 

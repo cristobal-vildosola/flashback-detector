@@ -26,7 +26,7 @@ from typing import Tuple, List
 import numpy as np
 from nearpy.engine import Engine
 from nearpy.storage import MemoryStorage
-from nearpy.distances.euclidean import EuclideanDistance
+from nearpy.distances import ManhattanDistance
 
 
 class HashEngine(Engine):
@@ -39,7 +39,7 @@ class HashEngine(Engine):
             self, vectors, labels,
             lshashes=None,
             vector_filters=None,
-            distance=EuclideanDistance(),
+            distance=ManhattanDistance(),
             fetch_vector_filters=None,
             verbose=False
     ):
@@ -164,11 +164,15 @@ class OptimizedMemoryStorage(MemoryStorage):
             for key in self.buckets[table]:
                 bucket_sizes.append(len(self.buckets[table][key]))
 
-        mean = np.mean(bucket_sizes)
         print(f'storage stats:\n'
-              f'\ttotal buckets: {len(bucket_sizes)}\n'
-              f'\tmax: {max(bucket_sizes)}\n'
-              f'\tmean: {mean:.1f}\n'
+              f'\tbuckets / table: {len(bucket_sizes) / len(self.buckets)}\n'
+              f'\ttop_10: {sorted(bucket_sizes, reverse=True)[:10]}\n'
+              f'\tmean: {np.mean(bucket_sizes):.1f}\n'
+              f'\tmedian: {np.median(bucket_sizes):.1f}\n'
               f'\tmin: {min(bucket_sizes)}\n')
+
+        # import matplotlib.pyplot as plt
+        # plt.hist(bucket_sizes, bins=60, range=(0, 300))
+        # plt.show()
 
         return

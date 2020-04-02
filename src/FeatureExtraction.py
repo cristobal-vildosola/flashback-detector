@@ -71,8 +71,8 @@ def extract_features(
     """
 
     video_name = re.split('[/.]', file_path)[-2]
-    save_path_feats = f'{save_dir}/{video_name}-feats'
-    save_path_tags = f'{save_dir}/{video_name}-tags'
+    save_path_feats = f'{save_dir}/{video_name}-feats.npy'
+    save_path_tags = f'{save_dir}/{video_name}-tags.npy'
 
     # skip already processed videos
     if not force and os.path.isfile(save_path_feats) and os.path.isfile(save_path_tags):
@@ -119,7 +119,7 @@ def extract_features(
 def main():
     selectors = [
         FPSReductionKS(n=3),
-        MaxHistDiffKS(frames_per_window=2),
+        MaxHistDiffKS(frames_per_window=1),
     ]
     extractors = [
         ColorLayoutFE(),
@@ -128,7 +128,7 @@ def main():
 
     for selector in selectors:
         for extractor in extractors:
-            extract_features_directory(selector=selector, extractor=extractor, force=True)
+            extract_features_directory(selector=selector, extractor=extractor)
 
     return
 

@@ -6,7 +6,7 @@ import numpy
 from keras.layers import Input, Conv2D, Flatten, MaxPooling2D, UpSampling2D
 from keras.models import Model, load_model
 
-import keyframes.KeyframeSelector as Keyframes
+from keyframes import FPSReductionKS
 from features.FeatureExtractor import FeatureExtractor
 
 
@@ -110,10 +110,6 @@ class AutoEncoderFE(FeatureExtractor):
         duration = time.time() - t0
         print(f'resizing {len(data)} frames took {duration:.2f} seconds')
 
-        log = open('resizing-log.txt', 'a')
-        log.write(f'{len(data):.0f}\t{duration:.2f}\n')
-        log.close()
-
         return new_data
 
     def train(
@@ -204,7 +200,7 @@ def main():
     shape = (64, 64, 3)
 
     # select keyframes and shuffle
-    selector = Keyframes.FPSReductionKS(n=1)
+    selector = FPSReductionKS(n=1)
     frames, _, _ = selector.select_keyframes('../../videos/Shippuden_low/003.mp4')
     numpy.random.shuffle(frames)
 
@@ -215,13 +211,19 @@ def main():
 
     else:
         # best: tanh-tanh, second: tanh-relu
-        autoencoder = AutoEncoderFE(input_shape=shape, cells=4, convs=2, activation='tanh', output_activation='tanh')
+        autoencoder = AutoEncoderFE(
+            input_shape=shape,
+            cells=4,
+            convs=2,
+            activation='tanh',
+            output_activation='tanh',
+            model_name='model2'
+        )
 
         # autoencoder.train(frames, epochs=50)
         # autoencoder.save()
 
     print(f'descriptor size: {autoencoder.output_size}')
-
     autoencoder.test(frames[:30])
     return
 

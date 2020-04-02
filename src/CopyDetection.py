@@ -2,6 +2,8 @@ import os
 import time
 from typing import List
 
+import numpy as np
+
 from features import AutoEncoderFE, ColorLayoutFE, FeatureExtractor
 from indexes import LSHIndex, SGHIndex, LinearIndex, KDTreeIndex, SearchIndex
 from keyframes import KeyframeSelector, MaxHistDiffKS, FPSReductionKS
@@ -25,10 +27,13 @@ def read_neighbours(neighbours_file: str) -> List[Neighbours]:
     """
     reads a neighbours file.
 
-    :param neighbours_file: full path to the neighbours file
+    :param neighbours_file: full path to the neighbours file.
     """
     neighbours_list = list()
+
+    # stats
     videos = dict()
+    num_neighbours = []
 
     with open(neighbours_file, 'r') as log:
         for line in log:
@@ -36,6 +41,8 @@ def read_neighbours(neighbours_file: str) -> List[Neighbours]:
             timestamp, neighbours = line.split(' $ ')
             timestamp = float(timestamp)
             neighbours = neighbours.split(' | ')
+
+            num_neighbours.append(len(neighbours))
 
             # parse frames
             frames = []
@@ -51,7 +58,10 @@ def read_neighbours(neighbours_file: str) -> List[Neighbours]:
             neighbours_list.append(Neighbours(timestamp=timestamp, frames=frames))
 
     # print video ocurrences sorted by number
-    print(sorted(videos.items(), key=lambda kv: kv[1], reverse=True))
+    # print(sorted(videos.items(), key=lambda kv: kv[1], reverse=True)[:50])
+
+    # print neighbours stats
+    print(f'min 10 num_neighbours: {sorted(num_neighbours)[:10]}')
 
     return neighbours_list
 
@@ -70,14 +80,22 @@ class Candidate:
         self.found: int = 0
         self.missing_streak: int = 0
 
+    def orig_end_time(self) -> float:
+        return self.orig_start_time + self.duration
+
+    def end_time(self) -> float:
+        return self.start_time + self.duration
+
     def find_next(self, neighbours: Neighbours, threshold: int = 0):
         self.index += 1
 
+        low = self.index - threshold
+        high = self.index + threshold
         for frame in neighbours.frames:
 
             # find index in range
-            if self.video == frame.video and (frame.index - threshold) <= self.index <= (frame.index + threshold):
-                self.duration = neighbours.timestamp - self.orig_start_time
+            if self.video == frame.video and low <= frame.index <= high:
+                self.duration = neighbours.timestamp - self.start_time
 
                 self.missing_streak = 0
                 self.found += 1
@@ -87,48 +105,55 @@ class Candidate:
         self.missing += 1
         return
 
-    def orig_end_time(self) -> float:
-        return self.orig_start_time + self.duration
+    def offset(self) -> float:
+        return self.orig_start_time - self.start_time
 
-    def end_time(self) -> float:
-        return self.start_time + self.duration
+    def offset_diff(self, other: 'Candidate') -> float:
+        return abs(self.offset() - other.offset())
 
-    def overlapped(self, other: 'Candidate'):
-        if self.orig_start_time <= other.orig_start_time < self.orig_end_time() or \
-                other.orig_start_time <= self.orig_start_time < other.orig_end_time():
-            return True
+    def contains(self, other: 'Candidate'):
+        """ checks is the other copy is completely contained in the actual one """
+        orig_contained = self.orig_start_time <= other.orig_start_time and other.orig_end_time() <= self.orig_end_time()
+        copy_contained = self.start_time <= other.start_time and other.end_time() <= self.end_time()
+        return orig_contained and copy_contained
 
-        return False
+    def distance(self, other: 'Candidate'):
+        if self.video != other.video:
+            return 1000000
 
-    def combine(self, other: 'Candidate', max_offset: float):
-        if self.orig_start_time <= other.orig_start_time and \
-                self.orig_end_time() >= other.orig_end_time():
+        closest_start = np.clip(self.start_time, other.start_time, other.end_time())
+        closest_end = np.clip(self.end_time(), other.start_time, other.end_time())
+
+        return min(abs(self.start_time - closest_start), abs(self.end_time() - closest_end))
+
+    def combine(self, other: 'Candidate'):
+        if self.contains(other) or other.contains(self):
             return
 
-        if other.orig_start_time <= self.orig_start_time and \
-                other.orig_end_time() >= self.orig_end_time():
-            return
-
-        offset = abs((self.orig_start_time - other.orig_start_time) -
-                     (self.start_time - other.start_time))
-
-        if offset > max_offset:
-            return
+        offset_self = self.offset()
+        offset_other = other.offset()
 
         self.duration = max(self.end_time(), other.end_time()) - min(self.start_time, other.start_time)
-        self.orig_start_time = min(self.orig_start_time, other.orig_start_time)
         self.start_time = min(self.start_time, other.start_time)
+        other.duration = self.duration
+        other.start_time = self.start_time
 
-        # TODO combine scores
+        # each copy keeps it's own offset
+        self.orig_start_time = self.start_time + offset_self
+        other.orig_start_time = other.start_time + offset_other
+
         return
 
     def score(self) -> float:
-        if self.found < 5:
+        if self.found < 3:
             return 0
         return self.found / max(1, self.missing - self.missing_streak)
 
     def __str__(self):
-        return f'{self.orig_start_time:.2f} {self.duration:.2f} {self.video} {self.start_time:.2f} ({self.score():.2f})'
+        return f'{self.start_time:.1f} {self.video} {self.orig_start_time:.1f} {self.duration:.1f} {self.score():.1f}'
+
+    def __repr__(self):
+        return str(self)
 
 
 def find_copies(
@@ -137,7 +162,7 @@ def find_copies(
         extractor: FeatureExtractor,
         index: SearchIndex,
         max_missing_streak: int = 7,
-        minimun_duration: float = 1,
+        min_duration: float = 1,
         max_offset: float = 0):
     """
     Searches for copies in the given video.
@@ -148,27 +173,29 @@ def find_copies(
     :param index: the index used during similarity search.
 
     :param max_missing_streak: .
-    :param minimun_duration: .
+    :param min_duration: .
     :param max_offset: .
     """
-
-    print(f'searching for copies in {video_name}')
-    t0 = time.time()
 
     # read neghbours
     neighbours_path = get_neighbours_path(selector=selector, extractor=extractor, index=index)
     neighbours_list = read_neighbours(f'{neighbours_path}/{video_name}.txt')
 
+    print(f'searching for copies in {video_name} using {neighbours_path}')
+    t0 = time.time()
+
     # copies candidates
     candidates = []
     copies = []
+
+    threshold = 0
 
     for neighbours in neighbours_list:
         closed_copies = []
 
         # search sequences
         for cand in candidates:
-            cand.find_next(neighbours, threshold=1)
+            cand.find_next(neighbours, threshold=threshold)
 
             # determinar fin de clip.
             if cand.missing_streak >= max_missing_streak:
@@ -179,75 +206,119 @@ def find_copies(
             candidates.remove(closed)
 
             # if the candidate is good, add to the list
-            if closed.score() >= 1 and closed.duration > minimun_duration / 2:
+            if closed.score() >= 1 and closed.duration > min_duration / 2:
                 copies.append(closed)
 
         # add copies candidates
         for frame in neighbours.frames:
 
             # skip frames from the video being analized
-            if frame.video == video_name:
-                continue
+            # if frame.video == video_name:
+            #    continue
 
             # check that it's not the current frame for any of the existing candidates
-            for copy_a in candidates:
-                # TODO check range
-                if copy_a.video == frame.video and copy_a.index == frame.index:
+            low = frame.index - threshold
+            high = frame.index + threshold
+            for cand in candidates:
+                if cand.video == frame.video and low <= cand.index <= high:
                     continue
 
             candidates.append(
                 Candidate(
                     video=frame.video,
                     index=frame.index,
-                    start_time=frame.timestamp,
-                    original_start_time=neighbours.timestamp))
+                    start_time=neighbours.timestamp,
+                    original_start_time=frame.timestamp,
+                )
+            )
 
     # check reamining candidates
     for cand in candidates:
-        if cand.score() >= 1 and cand.duration > minimun_duration / 2:
+        if cand.score() >= 1 and cand.duration > min_duration / 2:
             copies.append(cand)
 
-    print(f'{len(copies)} copies detected')
+    print(f'\t{len(copies)} candidates detected in {int(time.time() - t0)} seconds')
+
+    # separate copies by video
+    video_copies = {}
+
+    for copy in copies:
+        video = copy.video
+
+        if video not in video_copies:
+            video_copies[video] = []
+        video_copies[video].append(copy)
+
+    # first remove repeated copies and sort by start
+    for video in video_copies:
+        current_copies = video_copies[video]
+        filtered = []
+
+        for i in range(len(current_copies)):
+            copy_a = current_copies[i]
+
+            add = True
+            for j in range(len(current_copies)):
+                if j == i:
+                    continue
+
+                if current_copies[j].contains(copy_a):
+                    add = False
+                    break
+
+            if add:
+                filtered.append(copy_a)
+
+        video_copies[video] = sorted(filtered, key=lambda c: c.start_time)
+
+    print(f'\t{num_copies(video_copies)} copies kept after removing contained videos')
 
     # combine copies when possible
-    for i in range(len(copies)):
-        copy_a = copies[i]
+    for video in video_copies:
+        current_copies = video_copies[video]
+        for i in range(len(current_copies)):
+            copy_a = current_copies[i]
 
-        for j in range(i + 1, len(copies)):
-            copy_b = copies[j]
+            for j in range(i + 1, len(current_copies)):
+                copy_b = current_copies[j]
 
-            if copy_a.video == copy_b.video and copy_a.overlapped(copy_b):
-                copy_a.combine(copy_b, max_offset)
+                if copy_a.distance(copy_b) < 3 and copy_a.offset_diff(copy_b) < max_offset:
+                    copy_a.combine(copy_b)
 
     # detect overlapped copies
-    overlapped = set()
-    for i in range(len(copies)):
-        copy_a = copies[i]
-        for j in range(i + 1, len(copies)):
-            copy_b = copies[j]
+    for video in video_copies:
+        current_copies = video_copies[video]
+        repeated = set()
 
-            # if there's overlapping keep only the longest copy
-            if copy_a.video == copy_b.video and copy_a.overlapped(copy_b):
-                if copy_a.duration > copy_b.duration:
-                    overlapped.add(copy_b)
-                else:
-                    overlapped.add(copy_a)
+        for i in range(len(current_copies)):
+            copy_a = current_copies[i]
 
-    # delete overlapped copies
-    for copy in overlapped:
-        copies.remove(copy)
+            for j in range(i + 1, len(current_copies)):
+                copy_b = current_copies[j]
 
-    print(f'{len(copies)} copies kept after combining and deleting overlapped videos')
+                # if there's overlapping, filter video
+                if copy_a.distance(copy_b) <= 0.1 and copy_a.offset_diff(copy_b) < 10:
+                    if copy_a.duration >= copy_b.duration:
+                        repeated.add(copy_b)
+                    else:
+                        repeated.add(copy_a)
+
+        for copy in repeated:
+            current_copies.remove(copy)
+
+    print(f'\t{num_copies(video_copies)} copies kept after combining and removing overlapped videos')
 
     # delete short copies
-    too_short = []
-    for copy in copies:
-        if copy.duration < minimun_duration:
-            too_short.append(copy)
-    for copy in too_short:
-        copies.remove(copy)
+    for video in video_copies:
 
-    print(f'{len(copies)} copies kept after deleting short videos')
+        filtered_copies = []
+        for copy in video_copies[video]:
+            if copy.duration > min_duration:
+                filtered_copies.append(copy)
+
+        video_copies[video] = filtered_copies
+
+    print(f'\t{num_copies(video_copies)} copies kept after removing short videos')
 
     # open log
     results_path = get_results_path(selector=selector, extractor=extractor, index=index)
@@ -255,40 +326,59 @@ def find_copies(
         os.makedirs(results_path)
     log = open(f'{results_path}/{video_name}.txt', 'w')
 
-    # sort by chapter and write to file
-    copies = sorted(copies, key=lambda x: x.video)
-    for copy in copies:
-        log.write(f'{copy}\n')
+    # write to file
+    for video in sorted(video_copies.keys()):
+        for copy in video_copies[video]:
+            log.write(f'{copy}\n')
 
     log.close()
-    print(f'found {len(copies)} copies in {int(time.time() - t0)} seconds')
+    print(f'found {num_copies(video_copies)} copies in {int(time.time() - t0)} seconds\n')
     return
 
 
+def num_copies(video_copies: dict):
+    n = 0
+    for video in video_copies:
+        n += len(video_copies[video])
+    return n
+
+
 def main():
+    max_missing_streak = 6
+    min_duration = 5
+    max_offset = 2
+
+    videos = ['417', '143', '215', '385', '178', '119-120', ]
+
     selectors = [
-        FPSReductionKS(n=6),
-        MaxHistDiffKS(frames_per_window=2),
+        FPSReductionKS(n=3),
+        MaxHistDiffKS(frames_per_window=1),
     ]
     extractors = [
         ColorLayoutFE(),
-        AutoEncoderFE(dummy=True, model_name='features/model'),
-    ]
-    indexes = [
-        LinearIndex(dummy=True, k=100),
-        KDTreeIndex(dummy=True, trees=10, k=100),
-        SGHIndex(dummy=True, projections=16),
-        LSHIndex(dummy=True, projections=16),
+        AutoEncoderFE(dummy=True, model_name='model'),
     ]
 
-    find_copies(
-        video_name='385',
-        selector=selectors[2],
-        extractor=extractors[0],
-        index=indexes[1],
-        max_missing_streak=6,
-        minimun_duration=3,
-        max_offset=1)
+    k = 100
+    indexes = [
+        LinearIndex(dummy=True, k=k),
+        KDTreeIndex(dummy=True, trees=5, k=k),
+        SGHIndex(dummy=True, projections=14, k=k),
+        LSHIndex(dummy=True, projections=16, tables=2, k=k),
+    ]
+
+    for selector in selectors:
+        for extractor in extractors:
+            for index in indexes:
+                for video_name in videos:
+                    find_copies(
+                        video_name=video_name,
+                        selector=selector,
+                        extractor=extractor,
+                        index=index,
+                        max_missing_streak=max_missing_streak,
+                        min_duration=min_duration,
+                        max_offset=max_offset)
     return
 
 
