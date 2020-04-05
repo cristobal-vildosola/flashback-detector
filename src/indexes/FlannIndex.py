@@ -55,7 +55,7 @@ class LinearIndex(FlannIndex):
         super().__init__(data=data, labels=labels, k=k, algorithm="linear", dummy=dummy)
 
     def name(self) -> str:
-        return f'linear_{self.k}'
+        return f'linear'
 
 
 class KDTreeIndex(FlannIndex):

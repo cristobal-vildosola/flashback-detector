@@ -365,7 +365,7 @@ def main():
     ]
     extractors = [
         ColorLayoutFE(),
-        # AutoEncoderFE(dummy=True, model_name='model'),
+        # AutoEncoderFE(dummy=True),
     ]
 
     indexes = [

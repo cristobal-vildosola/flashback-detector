@@ -28,5 +28,5 @@ def show_fps(folder='../../videos/Shippuden_low'):
 
 
 if __name__ == '__main__':
-    show_fps('../../videos/Shippuden_original')
-    # print(f'{count_frames():.0f}')
+    # show_fps('../../videos/Shippuden_original')
+    print(f'{int(count_frames())}')
