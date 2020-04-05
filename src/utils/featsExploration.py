@@ -26,10 +26,12 @@ def main():
         plt.title(f'{selector.name()} - {extractor.name()}')
 
         plt.errorbar(x, mean, std, fmt='.b', ecolor='r', capsize=3)
-        plt.plot(x, mins, 'y')
-        plt.plot(x, maxs, 'g')
 
-        plt.xlabel('i-th feat')
+        plt.plot(x, maxs, 'g')
+        plt.plot(x, mins, 'y')
+        plt.legend(['max', 'min', ])
+
+        plt.xlabel('features')
         plt.ylabel('value')
 
     plt.show()

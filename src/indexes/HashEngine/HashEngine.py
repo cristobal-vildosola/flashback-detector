@@ -21,15 +21,15 @@
 # THE SOFTWARE.
 
 import time
-from typing import Tuple, List
+from typing import Tuple
 
 import numpy as np
-from nearpy.engine import Engine
 from nearpy.storage import MemoryStorage
-from nearpy.distances import ManhattanDistance
+
+from indexes.HashEngine.NearestFilter import NearestFilter
 
 
-class HashEngine(Engine):
+class HashEngine:
     """
     Optimized engine, stores indexes instead of full vectors in the storage.
     Must receive full matrix of vectors at construction.
@@ -38,20 +38,17 @@ class HashEngine(Engine):
     def __init__(
             self, vectors, labels,
             lshashes=None,
-            vector_filters=None,
-            distance=ManhattanDistance(),
-            fetch_vector_filters=None,
+            k: int = 100,
             verbose=False
     ):
-        super().__init__(
-            dim=vectors.shape[1],
-            lshashes=lshashes,
-            distance=distance,
-            fetch_vector_filters=fetch_vector_filters,
-            vector_filters=vector_filters,
-            storage=OptimizedMemoryStorage())
+        self.lshashes = lshashes
+        for lshash in self.lshashes:
+            lshash.reset(vectors.shape[1])
 
-        self.vectors = vectors
+        self.nearest_filter = NearestFilter(k=k)
+        self.storage = OptimizedMemoryStorage()
+
+        self.vectors = vectors.astype('float32')
         self.labels = labels
 
         t0 = time.time()
@@ -62,7 +59,7 @@ class HashEngine(Engine):
                 print(f'indexed {i + 1:,} ({round((i + 1) / self.vectors.shape[0] * 100)}%) vectors'
                       f' in {time.time() - t0:.1f} seconds')
 
-    def store_vector(self, v_i, data=None):
+    def store_vector(self, v_i):
         """
         Hashes vector i and stores it in all matching buckets in the storage.
         The data argument must be JSON-serializable. It is stored with the
@@ -76,53 +73,48 @@ class HashEngine(Engine):
 
         return
 
-    def delete_vector(self, v_i, v=None):
-        """ Deletes vector v_i in all matching buckets in the storage. """
-        centered_vector = self.vectors[v_i]
+    def neighbours(self, v):
+        """
+        Hashes vector v, collects all candidate vectors from the matching
+        buckets in storage, applys the (optional) distance function and
+        finally the (optional) filter function to construct the returned list
+        of either (vector, data, distance) tuples or (vector, data) tuples.
+        """
 
-        # Delete vector index in each hashes
-        for lshash in self.lshashes:
-            keys = lshash.hash_vector(centered_vector)
-            self.storage.delete_vector(lshash.hash_name, keys, v_i)
+        # Collect candidates from all buckets from all hashes
+        points, labels = self._get_candidates(v)
 
-        return
+        # brute force search over candidates
+        points, labels = self.nearest_filter.filter(v, points, labels)
+
+        return points, labels
 
     def candidate_count(self, vector):
         """ Counts candidates from all buckets from all hashes """
-        candidates = 0
-        centered_vector = vector
+        candidates = set()
 
         for lshash in self.lshashes:
-            for bucket_key in lshash.hash_vector(centered_vector):
-                candidates += len(self.storage.get_bucket(lshash.hash_name, bucket_key))
+            for bucket_key in lshash.hash_vector(vector):
+                bucket_content = self.storage.get_bucket(lshash.hash_name, bucket_key)
+                candidates.update(bucket_content)
 
-        return candidates
+        return len(candidates)
 
-    def _get_candidates(self, vector) -> List[Tuple[str, np.ndarray]]:
+    def _get_candidates(self, vector) -> Tuple[np.ndarray, np.ndarray]:
         """ Collect candidates from all buckets from all hashes """
-        candidates_indexes = []
+        cand_indexes = set()
         centered_vector = vector
 
         for lshash in self.lshashes:
             for bucket_key in lshash.hash_vector(centered_vector):
                 bucket_indexes = self.storage.get_bucket(lshash.hash_name, bucket_key)
-                candidates_indexes.extend(bucket_indexes)
+                cand_indexes.update(bucket_indexes)
 
-        # retrieve real vectors from indexes
-        candidates = [(self.vectors[v_i], self.labels[v_i]) for v_i in candidates_indexes]
-        return candidates
-
-    def _append_distances(self, v, distance, candidates) -> List[Tuple[str, np.ndarray, float]]:
-        if distance:
-            candidates = [(*x, self.distance.distance(x[0], v)) for x in candidates]
-
-        return candidates
+        # retrieve real vectors and labels from indexes
+        indexes = list(cand_indexes)
+        return self.vectors[indexes], self.labels[indexes]
 
     def analize_storage(self):
-        """
-        Only for testing purposes.
-        Prints all storage keys and number of vectors in bucket.
-        """
         self.storage.analize_storage()
         return
 
@@ -143,14 +135,6 @@ class OptimizedMemoryStorage(MemoryStorage):
             self.buckets[hash_name][bucket_key] = []
 
         self.buckets[hash_name][bucket_key].append(v_i)
-        return
-
-    def delete_vector(self, hash_name, bucket_keys, v_i):
-        """ Deletes vector in buckets with specified keys. """
-        for key in bucket_keys:
-            bucket = self.get_bucket(hash_name, key)
-            bucket[:] = [i for i in bucket if i != v_i]
-
         return
 
     def analize_storage(self):

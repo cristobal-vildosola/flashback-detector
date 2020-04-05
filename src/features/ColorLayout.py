@@ -30,7 +30,7 @@ def color_layout_descriptor(img: np.ndarray):
     """
     # resize to desired size and convert color
     resized = cv2.resize(img, dsize=(8, 8), interpolation=cv2.INTER_AREA)
-    y, cr, cb = cv2.split(cv2.cvtColor(np.array(resized, dtype=np.uint8), cv2.COLOR_BGR2YCR_CB))
+    y, cr, cb = cv2.split(cv2.cvtColor(resized, cv2.COLOR_BGR2YCR_CB))
 
     # calculate discrete coscine transform
     dct_y = cv2.dct(np.float32(y)).flatten()

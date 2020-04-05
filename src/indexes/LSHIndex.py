@@ -1,8 +1,7 @@
 import time
 
 import numpy as np
-from nearpy.filters.nearestfilter import NearestFilter
-from nearpy.hashes import RandomBinaryProjections
+from nearpy.hashes import RandomDiscretizedProjections
 
 from indexes.HashEngine.HashEngine import HashEngine
 from indexes.SearchIndex import SearchIndex
@@ -15,8 +14,10 @@ class LSHIndex(SearchIndex):
             data: np.ndarray = None,
             labels: np.ndarray = None,
             k: int = 100,
-            projections: int = 20,
+            projections: int = 3,
+            bin_width: int = 10,
             tables: int = 3,
+            verbose: bool = True,
             dummy: bool = False,
     ):
         self.k = k
@@ -28,16 +29,13 @@ class LSHIndex(SearchIndex):
                 raise Exception('data and labels must be numpy.ndarray when not using dummy indexer')
             t0 = time.time()
 
-            # center data in 0 so that all projections are useful
-            self.means = data.mean(axis=0)
-
             self.engine = HashEngine(
-                vectors=data - self.means,
+                vectors=data,
                 labels=labels,
-                lshashes=[RandomBinaryProjections(f'rbp_{i}', projections)
+                lshashes=[RandomDiscretizedProjections(f'rbp_{i}', projections, bin_width=bin_width)
                           for i in range(tables)],
-                vector_filters=[NearestFilter(k)],
-                verbose=True,
+                k=k,
+                verbose=verbose,
             )
             self.build_time = time.time() - t0
 
@@ -45,14 +43,11 @@ class LSHIndex(SearchIndex):
         return self.k
 
     def candidate_count(self, vector) -> int:
-        return self.engine.candidate_count(vector - self.means)
+        return self.engine.candidate_count(vector)
 
     def search(self, vector):
-        neighbours = self.engine.neighbours(vector - self.means)
-        # vectors = [neighbour[0] for neighbour in neighbours]
-        labels = [neighbour[1] for neighbour in neighbours]
-        # distances = [neighbour[2] for neighbour in neighbours]
+        point, labels = self.engine.neighbours(vector)
         return labels
 
     def name(self) -> str:
-        return f'LSH_{self.tables}_{self.projections}_{self.k}'
+        return f'LSH_{self.tables}_{self.projections}'

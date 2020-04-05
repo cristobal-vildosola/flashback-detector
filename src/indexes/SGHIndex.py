@@ -1,7 +1,6 @@
 import time
 
 import numpy as np
-from nearpy.filters.nearestfilter import NearestFilter
 
 from indexes.HashEngine.HashEngine import HashEngine
 from indexes.HashEngine.SGHash import SGHash
@@ -18,6 +17,7 @@ class SGHIndex(SearchIndex):
             projections: int = 16,
             training_split: float = 0.1,
             num_bases: int = 300,
+            verbose: bool = True,
             dummy: bool = False,
     ):
         self.k = k
@@ -33,8 +33,8 @@ class SGHIndex(SearchIndex):
                 vectors=data,
                 labels=labels,
                 lshashes=[SGHash('sgh', training_data=training_data, projections=projections, num_bases=num_bases)],
-                vector_filters=[NearestFilter(k)],
-                verbose=True,
+                k=k,
+                verbose=verbose,
             )
             self.build_time = time.time() - t0
 
@@ -45,11 +45,8 @@ class SGHIndex(SearchIndex):
         return self.engine.candidate_count(vector)
 
     def search(self, vector):
-        neighbours = self.engine.neighbours(vector)
-        # vectors = [neighbour[0] for neighbour in neighbours]
-        labels = [neighbour[1] for neighbour in neighbours]
-        # distances = [neighbour[2] for neighbour in neighbours]
+        point, labels = self.engine.neighbours(vector)
         return labels
 
     def name(self) -> str:
-        return f'SGH_{self.projections}_{self.k}'
+        return f'SGH_{self.projections}'

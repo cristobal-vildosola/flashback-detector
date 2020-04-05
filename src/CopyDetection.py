@@ -7,7 +7,7 @@ import numpy as np
 from features import AutoEncoderFE, ColorLayoutFE, FeatureExtractor
 from indexes import LSHIndex, SGHIndex, LinearIndex, KDTreeIndex, SearchIndex
 from keyframes import KeyframeSelector, MaxHistDiffKS, FPSReductionKS
-from utils.files import get_neighbours_path, get_results_path
+from utils.files import get_neighbours_dir, get_results_dir
 
 
 class Frame:
@@ -49,6 +49,7 @@ def read_neighbours(neighbours_file: str) -> List[Neighbours]:
             for neighbour in neighbours:
                 # split neighbour data
                 neighbours_file, tiempo_frame, indice = neighbour.split(' # ')
+
                 frames.append(Frame(video=neighbours_file, timestamp=float(tiempo_frame), index=int(indice)))
 
                 # count video ocurrences
@@ -163,7 +164,9 @@ def find_copies(
         index: SearchIndex,
         max_missing_streak: int = 7,
         min_duration: float = 1,
-        max_offset: float = 0):
+        max_offset: float = 0,
+        force: bool = False,
+):
     """
     Searches for copies in the given video.
 
@@ -175,20 +178,31 @@ def find_copies(
     :param max_missing_streak: .
     :param min_duration: .
     :param max_offset: .
+
+    :param force: whether to re-do the detection or not
     """
 
+    results_dir = get_results_dir(selector=selector, extractor=extractor, index=index)
+    if not os.path.isdir(results_dir):
+        os.makedirs(results_dir)
+
+    results_path = f'{results_dir}/{video_name}.txt'
+    if os.path.isfile(results_path) and not force:
+        print(f'skipping video {video_name}')
+        return
+
     # read neghbours
-    neighbours_path = get_neighbours_path(selector=selector, extractor=extractor, index=index)
+    neighbours_path = get_neighbours_dir(selector=selector, extractor=extractor, index=index)
     neighbours_list = read_neighbours(f'{neighbours_path}/{video_name}.txt')
 
-    print(f'searching for copies in {video_name} using {neighbours_path}')
+    print(f'searching for copies in {video_name} using {neighbours_path.split("/")[-1]}')
     t0 = time.time()
 
     # copies candidates
     candidates = []
     copies = []
 
-    threshold = 0
+    threshold = 1
 
     for neighbours in neighbours_list:
         closed_copies = []
@@ -213,8 +227,8 @@ def find_copies(
         for frame in neighbours.frames:
 
             # skip frames from the video being analized
-            # if frame.video == video_name:
-            #    continue
+            if frame.video == video_name:
+                continue
 
             # check that it's not the current frame for any of the existing candidates
             low = frame.index - threshold
@@ -320,13 +334,8 @@ def find_copies(
 
     print(f'\t{num_copies(video_copies)} copies kept after removing short videos')
 
-    # open log
-    results_path = get_results_path(selector=selector, extractor=extractor, index=index)
-    if not os.path.isdir(results_path):
-        os.makedirs(results_path)
-    log = open(f'{results_path}/{video_name}.txt', 'w')
-
     # write to file
+    log = open(results_path, 'w')
     for video in sorted(video_copies.keys()):
         for copy in video_copies[video]:
             log.write(f'{copy}\n')
@@ -348,7 +357,7 @@ def main():
     min_duration = 5
     max_offset = 2
 
-    videos = ['417', '143', '215', '385', '178', '119-120', ]
+    videos = ['119-120', '143', '178', '215', '385', '417', ]
 
     selectors = [
         FPSReductionKS(n=3),
@@ -356,15 +365,15 @@ def main():
     ]
     extractors = [
         ColorLayoutFE(),
-        AutoEncoderFE(dummy=True, model_name='model'),
+        # AutoEncoderFE(dummy=True, model_name='model'),
     ]
 
-    k = 100
     indexes = [
-        LinearIndex(dummy=True, k=k),
-        KDTreeIndex(dummy=True, trees=5, k=k),
-        SGHIndex(dummy=True, projections=14, k=k),
-        LSHIndex(dummy=True, projections=16, tables=2, k=k),
+        LinearIndex(dummy=True),
+        KDTreeIndex(dummy=True, trees=5),
+        SGHIndex(dummy=True, projections=10),
+        LSHIndex(dummy=True, projections=5, tables=10),  # color layout
+        # LSHIndex(dummy=True, projections=3, tables=10),  # auto encoder
     ]
 
     for selector in selectors:
@@ -378,7 +387,9 @@ def main():
                         index=index,
                         max_missing_streak=max_missing_streak,
                         min_duration=min_duration,
-                        max_offset=max_offset)
+                        max_offset=max_offset,
+                        force=True,
+                    )
     return
 
 

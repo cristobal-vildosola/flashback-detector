@@ -10,28 +10,38 @@ from keyframes import KeyframeSelector
 project_root = 'C:/Users/Cristobal/Documents/U/TrabajoTitulo/proyectoTitulo'
 
 VIDEOS_DIR = f'{project_root}/videos/Shippuden_low'
+ORIG_VIDEOS_DIR = f'{project_root}/videos/Shippuden_original'
 FEATURES_DIR = f'{project_root}/videos_features'
 NEIGHBOURS_DIR = f'{project_root}/videos_neighbours'
 RESULTS_DIR = f'{project_root}/videos_results'
+GROUND_TRUTH_DIR = f'{project_root}/ground_truth'
 
 FEATURES_FILE = 'features'
 TAGS_FILE = 'tags'
 
 
-def get_videos_path():
+def get_videos_dir():
     return f'{VIDEOS_DIR}'
 
 
-def get_features_path(selector: KeyframeSelector, extractor: FeatureExtractor):
+def get_orig_videos_dir():
+    return f'{ORIG_VIDEOS_DIR}'
+
+
+def get_features_dir(selector: KeyframeSelector, extractor: FeatureExtractor):
     return f'{FEATURES_DIR}/{selector.name()}_{extractor.name()}'
 
 
-def get_neighbours_path(selector: KeyframeSelector, extractor: FeatureExtractor, index: SearchIndex):
+def get_neighbours_dir(selector: KeyframeSelector, extractor: FeatureExtractor, index: SearchIndex):
     return f'{NEIGHBOURS_DIR}/{selector.name()}_{extractor.name()}_{index.name()}'
 
 
-def get_results_path(selector: KeyframeSelector, extractor: FeatureExtractor, index: SearchIndex):
+def get_results_dir(selector: KeyframeSelector, extractor: FeatureExtractor, index: SearchIndex):
     return f'{RESULTS_DIR}/{selector.name()}_{extractor.name()}_{index.name()}'
+
+
+def get_ground_truth_dir():
+    return f'{GROUND_TRUTH_DIR}'
 
 
 def read_features(video_name: str, directory: str) -> Tuple[np.ndarray, np.ndarray]:
@@ -65,7 +75,7 @@ def group_features(
     :param force: when True, groups features even if it was done previously.
     """
     # full path to the features directory
-    feats_dir = get_features_path(selector=selector, extractor=extractor)
+    feats_dir = get_features_dir(selector=selector, extractor=extractor)
 
     # reload files if grouping was already done
     if os.path.isfile(f'{feats_dir}/{FEATURES_FILE}.npy') \
@@ -78,7 +88,7 @@ def group_features(
         return all_tags, all_features
 
     # obtain all videos
-    videos = os.listdir(get_videos_path())
+    videos = os.listdir(get_videos_dir())
 
     all_tags = np.empty(0, dtype=np.str)
     all_features = np.empty((0, extractor.descriptor_size()), dtype='int8')

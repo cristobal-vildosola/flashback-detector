@@ -78,7 +78,7 @@ class MaxHistDiffKS(KeyframeSelector):
         return np.array(keyframes), np.array(timestamps), processed
 
     def name(self) -> str:
-        return f'window_{self.frames_per_window}'
+        return f'histDiff_{self.frames_per_window}'
 
 
 def calc_hist(image, bins=(5, 5, 5), grid_size=3, norm=True):

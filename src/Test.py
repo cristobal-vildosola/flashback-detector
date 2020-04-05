@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from features import AutoEncoderFE, ColorLayoutFE, FeatureExtractor
 from indexes import LSHIndex, SGHIndex, LinearIndex, KDTreeIndex, SearchIndex
 from keyframes import KeyframeSelector, MaxHistDiffKS, FPSReductionKS
-from utils.files import get_neighbours_path, get_results_path
+from utils.files import get_neighbours_dir, get_results_dir
 
 
 class Frame:
@@ -61,7 +61,7 @@ def find_copies(
     t0 = time.time()
 
     # read neghbours
-    neighbours_path = get_neighbours_path(selector=selector, extractor=extractor, index=index)
+    neighbours_path = get_neighbours_dir(selector=selector, extractor=extractor, index=index)
     neighbours_list = read_neighbours(f'{neighbours_path}/{video_name}.txt')
 
     videos = {}

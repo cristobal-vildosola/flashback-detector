@@ -7,7 +7,7 @@ import numpy as np
 from features import AutoEncoderFE, ColorLayoutFE, FeatureExtractor
 from indexes import LSHIndex, SGHIndex, LinearIndex, KDTreeIndex, SearchIndex
 from keyframes import KeyframeSelector, MaxHistDiffKS, FPSReductionKS
-from utils.files import read_features, group_features, get_features_path, get_neighbours_path, log_persistent
+from utils.files import read_features, group_features, get_features_dir, get_neighbours_dir, log_persistent
 
 
 def nearest_neighbours(
@@ -29,15 +29,15 @@ def nearest_neighbours(
     :param force: whether to force search or not.
     """
 
-    neighbours_dir = get_neighbours_path(selector=selector, extractor=extractor, index=index)
+    neighbours_dir = get_neighbours_dir(selector=selector, extractor=extractor, index=index)
     neighbours_path = f'{neighbours_dir}/{video_name}.txt'
     if os.path.isfile(neighbours_path) and not force:
         print(f'skipping video {video_name}, already searched with index {index.name()}')
         return
 
     # read target video features
-    features_path = get_features_path(selector=selector, extractor=extractor)
-    tags, features = read_features(video_name=video_name, directory=features_path)
+    features_path = get_features_dir(selector=selector, extractor=extractor)
+    labels, features = read_features(video_name=video_name, directory=features_path)
 
     if analize:
         # analize number of candidates to ensure enough neighbours are found for each frame (and not too much)
@@ -55,7 +55,7 @@ def nearest_neighbours(
         #    return
 
     # open log
-    neighbours_file = open(neighbours_path, 'w')
+    # neighbours_file = open(neighbours_path, 'w')
 
     print(f'searching {index.neighbours_retrieved()} closest frames for video {video_name}'
           f' using {index.name()}')
@@ -63,18 +63,21 @@ def nearest_neighbours(
 
     # search closest neighbours for each frame
     for i in range(features.shape[0]):
-        closest = index.search(features[i])
+        nearest_points = index.search(features[i])
+
+        if type(nearest_points) != np.ndarray:
+            nearest_points = [nearest_points]
 
         # save results
-        timestamp = re.split(' # ', tags[i])[1]
-        neighbours_file.write(f'{timestamp} $ {" | ".join(closest)}\n')
+        timestamp = re.split(' # ', labels[i])[1]
+        # neighbours_file.write(f'{timestamp} $ {" | ".join(nearest_points)}\n')
 
         # display progress
         if (i + 1) % (features.shape[0] // 10) == 0:
             print(f'\tsearched {i + 1} ({(i + 1) / features.shape[0]:.0%}) vectors in {time.time() - t0:.1f} seconds')
 
     duration = time.time() - t0
-    neighbours_file.close()
+    # neighbours_file.close()
     print(f'the search took {duration:.1f} seconds for {features.shape[0]} frames\n')
 
     log_path = f'{neighbours_dir}/log.txt'
@@ -84,7 +87,7 @@ def nearest_neighbours(
 
 def main():
     np.random.seed(1209)
-    videos = ['417', '143', '215', '385', '178', '119-120', ]
+    videos = ['119-120', '143', '178', '215', '385', '417', ]
     k = 100
 
     selectors = [
@@ -93,13 +96,14 @@ def main():
     ]
     extractors = [
         ColorLayoutFE(),
-        AutoEncoderFE.load_autoencoder(model_name='features/model'),
+        # AutoEncoderFE.load_autoencoder(model_name='features/model'),
     ]
     indexes = [
         [LinearIndex, {}],
         [KDTreeIndex, {'trees': 5, 'checks': 1000}],
-        [LSHIndex, {'projections': 16, 'tables': 2}],
-        [SGHIndex, {'projections': 14}],
+        [SGHIndex, {'projections': 10, 'training_split': 0.3}],
+        [LSHIndex, {'projections': 5, 'tables': 10, 'bin_width': 20}],  # for color layout
+        # [LSHIndex, {'projections': 3, 'tables': 10, 'bin_width': 20}],  # for autoencoder
     ]
 
     for selector in selectors:
@@ -118,7 +122,7 @@ def main():
                 except:
                     pass
 
-                neighbours_path = get_neighbours_path(selector=selector, extractor=extractor, index=index)
+                neighbours_path = get_neighbours_dir(selector=selector, extractor=extractor, index=index)
                 if not os.path.isdir(neighbours_path):
                     os.makedirs(neighbours_path)
 
@@ -127,7 +131,7 @@ def main():
 
                 for video_name in videos:
                     nearest_neighbours(video_name=video_name, selector=selector, extractor=extractor, index=index,
-                                       analize=True)
+                                       analize=True, force=True)
     return
 
 

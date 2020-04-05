@@ -6,10 +6,10 @@ import numpy as np
 
 from features import AutoEncoderFE, ColorLayoutFE, FeatureExtractor
 from keyframes import KeyframeSelector, MaxHistDiffKS, FPSReductionKS
-from utils.files import get_features_path, get_videos_path, group_features
+from utils.files import get_features_dir, get_videos_dir, group_features, log_persistent
 
 
-def extract_features_directory(
+def extract_features_videos(
         selector: KeyframeSelector,
         extractor: FeatureExtractor,
         force=False
@@ -24,7 +24,7 @@ def extract_features_directory(
     """
 
     # create directory when necessary
-    feats_path = get_features_path(selector=selector, extractor=extractor)
+    feats_path = get_features_dir(selector=selector, extractor=extractor)
     if not os.path.isdir(feats_path):
         os.makedirs(feats_path)
 
@@ -34,7 +34,7 @@ def extract_features_directory(
         open(f'{feats_path}/selection_log.txt', 'w').close()
 
     # obtain all files in the directory
-    videos_path = get_videos_path()
+    videos_path = get_videos_dir()
     videos = os.listdir(videos_path)
 
     # extract features from each video
@@ -89,9 +89,7 @@ def extract_features(
     print(f'selected {len(keyframes)} of {total_frames} frames in {selection:.1f} secs')
 
     # log selection time
-    log = open(f'{save_dir}/selection_log.txt', 'a')
-    log.write(f'{len(timestamps)}\t{selection:.2f}\n')
-    log.close()
+    log_persistent(f'{len(timestamps)}\t{selection:.2f}\n', f'{save_dir}/selection_log.txt')
 
     # measure time
     t0 = time.time()
@@ -110,9 +108,7 @@ def extract_features(
     print(f'feature extraction for {len(timestamps)} frames took {extraction:.2f} seconds\n')
 
     # log extraction time
-    log = open(f'{save_dir}/extraction_log.txt', 'a')
-    log.write(f'{len(timestamps)}\t{extraction:.2f}\n')
-    log.close()
+    log_persistent(f'{len(timestamps)}\t{extraction:.2f}\n', f'{save_dir}/extraction_log.txt')
     return
 
 
@@ -128,7 +124,7 @@ def main():
 
     for selector in selectors:
         for extractor in extractors:
-            extract_features_directory(selector=selector, extractor=extractor)
+            extract_features_videos(selector=selector, extractor=extractor, force=True)
 
     return
 

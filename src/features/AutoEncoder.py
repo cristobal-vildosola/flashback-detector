@@ -8,6 +8,7 @@ from keras.models import Model, load_model
 
 from keyframes import FPSReductionKS
 from features.FeatureExtractor import FeatureExtractor
+from utils.files import get_videos_dir
 
 
 class AutoEncoderFE(FeatureExtractor):
@@ -40,7 +41,7 @@ class AutoEncoderFE(FeatureExtractor):
             self.input_shape = self.autoencoder.get_input_shape_at(0)[1:]
             self.output_size = self.encoder.output_shape[1]
 
-        self.model_name = model_name
+            self.model_name = model_name
 
     def create_model(
             self,
@@ -149,16 +150,18 @@ class AutoEncoderFE(FeatureExtractor):
         reconstructed = self.encode_decode(self.adapt_input(data))
         reconstructed = (reconstructed.clip(0, 1) * 255).astype('uint8')
 
-        # resize
-        def resize(img: numpy.ndarray):
-            return cv2.resize(img, dsize=(593, 336), interpolation=cv2.INTER_AREA)
+        # resize imgs
+        def resize(img: numpy.ndarray, size=(593, 336)):
+            return cv2.resize(img, dsize=size, interpolation=cv2.INTER_AREA)
+
+        original = [resize(img, size=(64, 64)) for img in data]
+        original = [resize(original[i]) for i in range(len(reconstructed))]
 
         reconstructed = [resize(reconstructed[i]) for i in range(len(reconstructed))]
-        original = [resize(data[i]) for i in range(len(reconstructed))]
 
         i = 0
         while True:
-            cv2.imshow(f'autoencoder reconstruction', cv2.vconcat([reconstructed[i], original[i]]))
+            cv2.imshow(f'autoencoder reconstruction', cv2.hconcat([original[i], reconstructed[i]]))
 
             key = cv2.waitKey(0)
             if key & 0xff == ord('a'):
@@ -179,7 +182,7 @@ class AutoEncoderFE(FeatureExtractor):
         return self.output_size
 
     def name(self) -> str:
-        return f'AE_{self.model_name}'
+        return f'AE'
 
     @staticmethod
     def load_autoencoder(model_name: str = 'model') -> 'AutoEncoderFE':
@@ -201,7 +204,13 @@ def main():
 
     # select keyframes and shuffle
     selector = FPSReductionKS(n=1)
-    frames, _, _ = selector.select_keyframes('../../videos/Shippuden_low/003.mp4')
+
+    videos_path = get_videos_dir()
+    frames, _, _ = selector.select_keyframes(f'{videos_path}/003.mp4')
+    frames_2, _, _ = selector.select_keyframes(f'{videos_path}/258.mp4')
+    frames_3, _, _ = selector.select_keyframes(f'{videos_path}/437.mp4')
+
+    frames = numpy.concatenate([frames, frames_2, frames_3])
     numpy.random.shuffle(frames)
 
     if load:
@@ -224,7 +233,7 @@ def main():
         # autoencoder.save()
 
     print(f'descriptor size: {autoencoder.output_size}')
-    autoencoder.test(frames[:30])
+    autoencoder.test(frames[:100])
     return
 
 

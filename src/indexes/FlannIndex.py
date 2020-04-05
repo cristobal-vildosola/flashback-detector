@@ -73,7 +73,7 @@ class KDTreeIndex(FlannIndex):
         self.checks = checks
 
     def name(self) -> str:
-        return f'kdTree_{self.trees}_{self.k}'
+        return f'kdTree_{self.trees}'
 
 
 class KMeansTree(FlannIndex):
@@ -92,4 +92,4 @@ class KMeansTree(FlannIndex):
         self.checks = checks
 
     def name(self) -> str:
-        return f'kmeansTree_{self.branching}_{self.k}'
+        return f'kmeansTree_{self.branching}'
