@@ -7,7 +7,7 @@ import numpy as np
 from features import AutoEncoderFE, ColorLayoutFE, FeatureExtractor
 from indexes import LSHIndex, SGHIndex, LinearIndex, KDTreeIndex, SearchIndex
 from keyframes import KeyframeSelector, MaxHistDiffKS, FPSReductionKS
-from utils.files import get_neighbours_dir, get_results_dir
+from utils.files import get_neighbours_dir, get_results_dir, log_persistent, RESULTS_DIR
 
 
 class Frame:
@@ -23,7 +23,7 @@ class Neighbours:
         self.frames: List[Frame] = frames
 
 
-def read_neighbours(neighbours_file: str) -> List[Neighbours]:
+def read_neighbours(neighbours_file: str, num_neighbours: int = 100) -> List[Neighbours]:
     """
     reads a neighbours file.
 
@@ -46,7 +46,7 @@ def read_neighbours(neighbours_file: str) -> List[Neighbours]:
 
             # parse frames
             frames = []
-            for neighbour in neighbours:
+            for neighbour in neighbours[:num_neighbours]:
                 # split neighbour data
                 neighbours_file, tiempo_frame, indice = neighbour.split(' # ')
 
@@ -202,7 +202,7 @@ def find_copies(
     candidates = []
     copies = []
 
-    threshold = 1
+    threshold = 0
 
     for neighbours in neighbours_list:
         closed_copies = []
@@ -341,7 +341,10 @@ def find_copies(
             log.write(f'{copy}\n')
 
     log.close()
-    print(f'found {num_copies(video_copies)} copies in {int(time.time() - t0)} seconds\n')
+
+    duration = time.time() - t0
+    print(f'found {num_copies(video_copies)} copies in {duration:.1f} seconds\n')
+    log_persistent(f'{len(neighbours_list)}\t{duration:.1f}\n', f'{RESULTS_DIR}/log.txt')
     return
 
 
@@ -360,19 +363,19 @@ def main():
     videos = ['119-120', '143', '178', '215', '385', '417', ]
 
     selectors = [
-        FPSReductionKS(n=3),
+        # FPSReductionKS(n=3),
         MaxHistDiffKS(frames_per_window=1),
     ]
     extractors = [
         ColorLayoutFE(),
-        # AutoEncoderFE(dummy=True),
+        AutoEncoderFE(dummy=True),
     ]
 
     indexes = [
         LinearIndex(dummy=True),
         KDTreeIndex(dummy=True, trees=5),
         SGHIndex(dummy=True, projections=10),
-        LSHIndex(dummy=True, projections=5, tables=10),  # color layout
+        # LSHIndex(dummy=True, projections=5, tables=10),  # color layout
         # LSHIndex(dummy=True, projections=3, tables=10),  # auto encoder
     ]
 

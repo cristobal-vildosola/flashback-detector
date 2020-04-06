@@ -5,3 +5,5 @@ videos/
 videos_features/
 videos_neighbours/
 videos_results/
+videos_results_t1/
+videos_ground_truth/

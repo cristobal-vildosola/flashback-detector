@@ -1,7 +1,9 @@
+import numpy as np
+
 from features import AutoEncoderFE, ColorLayoutFE
 from indexes import LSHIndex, SGHIndex, LinearIndex, KDTreeIndex
 from keyframes import MaxHistDiffKS, FPSReductionKS
-from utils.files import get_features_dir, get_neighbours_dir, get_results_dir
+from utils.files import get_features_dir, get_neighbours_dir, RESULTS_DIR
 
 
 def read_selection_log(selector, extractors):
@@ -18,7 +20,7 @@ def read_selection_log(selector, extractors):
                 total_time += float(time)
 
     naruto_frames = 16544314 * 2
-    print(f'{selector.name()} selected {naruto_frames / total_time:.3f} frames per second')
+    print(f'{selector.name()} selected {naruto_frames / total_time:.2f} frames per second')
     return
 
 
@@ -35,7 +37,7 @@ def read_extraction_log(extractor, selectors):
                 total_frames += int(frames)
                 total_time += float(time)
 
-    print(f'{extractor.name()} extracted {total_frames / total_time:.3f} frames per second')
+    print(f'{extractor.name()} extracted {total_frames / total_time:.2f} frames per second')
     return
 
 
@@ -61,8 +63,30 @@ def read_index_logs(selectors, extractors, index):
                     const_frames += int(frames)
                     const_time += float(time)
 
-    print(f'{index.name()} searched {search_frames / search_time:.3f} frames per second')
-    print(f'{index.name()} indexed {const_frames / const_time:.3f} frames per second')
+    print(f'{index.name()} searched {search_frames / search_time:.2f} frames per second')
+    print(f'{index.name()} indexed {const_frames / const_time:.2f} frames per second')
+    return
+
+
+def read_detection_log():
+    list_neighbours = []
+    list_time = []
+
+    l1 = list()
+
+    with open(f'{RESULTS_DIR}/log.txt', 'r') as detection_log:
+        for line in detection_log:
+            neighbours, time = line.split('\t')
+            list_neighbours.append(int(neighbours))
+            list_time.append(float(time))
+
+    print(f'{np.mean(list_time):.2f}, {np.mean(list_neighbours):.2f}')
+    print(f'{np.min(list_time):.2f} {np.median(list_time):.2f} {np.max(list_time):.2f}')
+
+    speed = np.array(list_neighbours) / np.array(list_time)
+    print(speed.min(), np.median(speed), speed.max())
+
+    print(f'processed {speed.mean():.2f} list of neighbours per second')
     return
 
 
@@ -97,7 +121,7 @@ def main():
     for i in range(len(lshs)):
         read_index_logs(selectors, [extractors[i]], lshs[i])
 
-
+    read_detection_log()
     return
 
 

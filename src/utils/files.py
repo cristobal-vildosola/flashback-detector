@@ -14,7 +14,7 @@ ORIG_VIDEOS_DIR = f'{project_root}/videos/Shippuden_original'
 FEATURES_DIR = f'{project_root}/videos_features'
 NEIGHBOURS_DIR = f'{project_root}/videos_neighbours'
 RESULTS_DIR = f'{project_root}/videos_results'
-GROUND_TRUTH_DIR = f'{project_root}/ground_truth'
+GROUND_TRUTH_DIR = f'{project_root}/videos_ground_truth'
 
 FEATURES_FILE = 'features'
 TAGS_FILE = 'tags'

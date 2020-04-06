@@ -87,7 +87,7 @@ def nearest_neighbours(
 
 def main():
     np.random.seed(1209)
-    videos = ['119-120', '143', '178', '215', '385', '417', ]
+    videos = ['119-120', '143', '178', '215', '385', '417', ]  # ['190', '227', ]
     k = 100
 
     selectors = [
