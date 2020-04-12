@@ -45,7 +45,7 @@ def combine_duplicates(
     filtered_ground_truth_path = f'{ground_truth_dir}/{video_name}_filtered.txt'
 
     if os.path.isfile(filtered_ground_truth_path):
-        res = input(f'video results already combined for {video_name}. c: check current, f: force ')
+        res = input(f'video results already combined for {video_name}. check current(c), force(f) or skip(default)?')
         if res == 'c':
             check_ground_truth(video_name)
             return

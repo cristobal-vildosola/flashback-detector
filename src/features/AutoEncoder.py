@@ -34,9 +34,9 @@ class AutoEncoderFE(FeatureExtractor):
                     kernel_size=kern_size, filters=filters, activation=activation,
                     pool_size=pool_size, output_activation=output_activation
                 )
-
-            self.autoencoder = autoencoder
-            self.encoder = encoder
+            else:
+                self.autoencoder = autoencoder
+                self.encoder = encoder
 
             self.input_shape = self.autoencoder.get_input_shape_at(0)[1:]
             self.output_size = self.encoder.output_shape[1]
@@ -197,20 +197,21 @@ class AutoEncoderFE(FeatureExtractor):
 
 def main():
     numpy.random.seed(1209)
-    load = True
+    load = False
 
     # input shape
     shape = (64, 64, 3)
 
     # select keyframes and shuffle
     selector = FPSReductionKS(n=1)
-
+    videos = ['003', '071', '118', '209', '258', '385', '437']
     videos_path = get_videos_dir()
-    frames, _, _ = selector.select_keyframes(f'{videos_path}/003.mp4')
-    frames_2, _, _ = selector.select_keyframes(f'{videos_path}/258.mp4')
-    frames_3, _, _ = selector.select_keyframes(f'{videos_path}/437.mp4')
 
-    frames = numpy.concatenate([frames, frames_2, frames_3])
+    frames, _, _ = selector.select_keyframes(f'{videos_path}/{videos[0]}.mp4')
+    for video in videos[1:]:
+        frames_2, _, _ = selector.select_keyframes(f'{videos_path}/{video}.mp4')
+        frames = numpy.concatenate([frames, frames_2])
+
     numpy.random.shuffle(frames)
 
     if load:
@@ -229,8 +230,8 @@ def main():
             model_name='model2'
         )
 
-        # autoencoder.train(frames, epochs=50)
-        # autoencoder.save()
+        autoencoder.train(frames, epochs=50)
+        autoencoder.save()
 
     print(f'descriptor size: {autoencoder.output_size}')
     autoencoder.test(frames[:100])

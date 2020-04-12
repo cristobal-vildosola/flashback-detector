@@ -114,7 +114,7 @@ def compare_videos(duplicate: Duplicate, folder: str = ''):
     copy_video = cv2.VideoCapture(f'{videos_path}/{duplicate.copy_video}.mp4')
     orig_video = cv2.VideoCapture(f'{videos_path}/{duplicate.orig_video}.mp4')
 
-    # add duplicate information
+    # duplicate information
     text = f'{duplicate.video_timestamp()} -> {duplicate.original_timestamp()} ({duplicate.score:.1f})'
     font = cv2.FONT_HERSHEY_COMPLEX
     scale = 1
@@ -132,6 +132,7 @@ def compare_videos(duplicate: Duplicate, folder: str = ''):
     frame_duration = 1 / fps
     frame_duration_milis = int(frame_duration * 1000 / 2)  # double speed
     pause = False
+    frame_size = (620, 348)
 
     while True:
         finished = not (time < duplicate.duration and copy_video.isOpened() and orig_video.isOpened())
@@ -141,13 +142,13 @@ def compare_videos(duplicate: Duplicate, folder: str = ''):
             _, frame1 = copy_video.read()
             _, frame2 = orig_video.read()
 
-            frame1 = cv2.resize(frame1, (640, 358))
-            frame2 = cv2.resize(frame2, (640, 358))
+            frame1 = cv2.resize(frame1, frame_size)
+            frame2 = cv2.resize(frame2, frame_size)
 
             # concatenate frames and add info
             img = cv2.hconcat([frame1, frame2])
-            cv2.putText(img, text, (int(640 - width / 2) - 1, heigth), font, scale, (0, 0, 0), thickness=thickness + 4)
-            cv2.putText(img, text, (int(640 - width / 2), heigth), font, scale, (255, 255, 255), thickness=thickness)
+            cv2.putText(img, text, (int(320 - width / 2) - 1, heigth), font, scale, (0, 0, 0), thickness=thickness + 4)
+            cv2.putText(img, text, (int(320 - width / 2), heigth), font, scale, (255, 255, 255), thickness=thickness)
 
             time += frame_duration
 
@@ -233,12 +234,11 @@ def evaluate_duplicates(
     cv2.destroyAllWindows()
     precision = correct / total * 100
     print(f'precision {video_name} ({folder}): {precision:.1f}%')
-    log_persistent(f'{video_name}\t{precision:.1f}\n', f'{results_path}/results.txt')
     return
 
 
 def main():
-    videos = ['178', '119-120', ]  # '417', '143', '215', '385',
+    videos = ['417', '143', '215', '385', '178', '119-120', ]
 
     selectors = [
         FPSReductionKS(n=3),
@@ -263,16 +263,16 @@ def main():
         # (selectors[0], extractors[0], indexes[2],),  # sgh
         # (selectors[0], extractors[0], indexes[3],),  # lsh
 
-        (selectors[0], extractors[1], indexes[0],),  # linear
-        (selectors[0], extractors[1], indexes[1],),  # kdtree
+        # (selectors[0], extractors[1], indexes[0],),  # linear
+        # (selectors[0], extractors[1], indexes[1],),  # kdtree
         # (selectors[0], extractors[1], indexes[2],),  # sgh
         # (selectors[0], extractors[1], indexes[4],),  # lsh
 
-        (selectors[1], extractors[0], indexes[1],),  # kdtree
-        (selectors[1], extractors[0], indexes[2],),  # sgh
-        (selectors[1], extractors[0], indexes[3],),  # lsh
+        # (selectors[1], extractors[0], indexes[1],),  # kdtree
+        # (selectors[1], extractors[0], indexes[2],),  # sgh
+        # (selectors[1], extractors[0], indexes[3],),  # lsh
 
-        (selectors[1], extractors[1], indexes[1],),  # kdtree
+        # (selectors[1], extractors[1], indexes[1],),  # kdtree
         # (selectors[1], extractors[1], indexes[2],),  # sgh
         # (selectors[1], extractors[1], indexes[4],),  # lsh
     ]
